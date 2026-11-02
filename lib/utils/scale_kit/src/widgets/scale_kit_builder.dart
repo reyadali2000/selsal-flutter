@@ -1,0 +1,503 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import '../core/scale_manager.dart';
+import '../core/scale_value_cache.dart';
+import '../core/font_config.dart';
+
+/// Wrapper widget that initializes ScaleKit and manages responsive updates.
+///
+/// This widget should wrap your [MaterialApp] at the top level of your
+/// application. It listens to [MediaQuery] changes and automatically
+/// updates scale factors when screen size or orientation changes.
+///
+/// The widget uses a threshold-based approach to prevent unnecessary
+/// recalculations on minor layout adjustments while still responding
+/// to significant size changes (e.g., foldable device transitions).
+///
+/// Example usage:
+/// ```dart
+/// class MyApp extends StatelessWidget {
+///   @override
+///   Widget build(BuildContext context) {
+///     return ScaleKitBuilder(
+///       designWidth: 375,
+///       designHeight: 812,
+///       designType: DeviceType.mobile,
+///       child: MaterialApp(
+///         home: HomePage(),
+///       ),
+///     );
+///   }
+/// }
+/// ```
+class ScaleKitBuilder extends StatefulWidget {
+  /// The child widget to wrap.
+  final Widget child;
+
+  /// Design width in logical pixels.
+  final double designWidth;
+
+  /// Design height in logical pixels.
+  final double designHeight;
+
+  /// Design device type from the artboard (mobile/tablet/desktop).
+  ///
+  /// **Not wired yet:** accepted for API stability but does not change
+  /// [ScaleManager] detection or scale limits. Use [deviceTypeOverride] to force
+  /// a device class until `designType` is implemented.
+  final DeviceType designType;
+
+  /// Optional override for device detection (null = auto-detect).
+  final DeviceType? deviceTypeOverride;
+
+  /// Minimum scale factor (optional).
+  final double? minScale;
+
+  /// Maximum scale factor (optional).
+  final double? maxScale;
+
+  /// Landscape font boost factors per device type (optional).
+  final double? mobileLandscapeFontBoost;
+  final double? tabletLandscapeFontBoost;
+  final double? desktopLandscapeFontBoost;
+
+  /// Landscape size boost factors per device type (optional).
+  final double? mobileLandscapeSizeBoost;
+  final double? tabletLandscapeSizeBoost;
+  final double? desktopLandscapeSizeBoost;
+
+  /// Portrait font boost factors per device type (optional).
+  final double? mobilePortraitFontBoost;
+  final double? tabletPortraitFontBoost;
+  final double? desktopPortraitFontBoost;
+
+  /// Portrait size boost factors per device type (optional).
+  final double? mobilePortraitSizeBoost;
+  final double? tabletPortraitSizeBoost;
+  final double? desktopPortraitSizeBoost;
+
+  /// Enable/disable autoscale boosts (default: true).
+  final bool autoScale;
+
+  /// Enable autoscale in landscape orientation (default: true).
+  final bool autoScaleLandscape;
+
+  /// Enable autoscale in portrait orientation (default: false).
+  final bool autoScalePortrait;
+
+  /// Globally enable/disable scaling (default: true).
+  final bool enabled;
+
+  /// When true, web and desktop platforms are locked to desktop responsive behaviour.
+  /// Mobile/tablet platforms remain unaffected.
+  final bool lockDesktopPlatforms;
+
+  /// When [lockDesktopPlatforms] is true, force desktop to behave like tablet.
+  final bool lockDesktopAsTablet;
+
+  /// When [lockDesktopPlatforms] is true, force desktop to behave like mobile.
+  final bool lockDesktopAsMobile;
+
+  /// Breakpoint configuration for responsive device detection.
+  final ScaleBreakpoints breakpoints;
+
+  /// Optional listenable to toggle scaling at runtime.
+  final ValueListenable<bool>? enabledListenable;
+
+  /// Threshold for triggering rebuilds when size changes (0.0 to 1.0).
+  ///
+  /// When the screen size changes by more than this percentage (relative to previous size),
+  /// the scale manager will recalculate and trigger a rebuild. Set to 0.0 to rebuild on any change.
+  ///
+  /// Defaults:
+  /// - 0.05 (5%) for mobile/tablet platforms
+  /// - 0.0  (0%) for desktop/web platforms (rebuild on any change)
+  final double? sizeChangeThreshold;
+
+  /// Creates a [ScaleKitBuilder] widget.
+  ///
+  /// Parameters:
+  /// - [child] - The child widget (typically MaterialApp)
+  /// - [designWidth] - Design width in logical pixels
+  /// - [designHeight] - Design height in logical pixels
+  /// - [designType] - Design device type (default: mobile)
+  /// - [deviceTypeOverride] - Optional override for runtime device detection
+  /// - [lockDesktopPlatforms] - Force desktop/web platforms to behave as desktop automatically
+  /// - [breakpoints] - Custom device breakpoints used for size-based detection
+  /// - [minScale] - Optional minimum scale factor
+  /// - [maxScale] - Optional maximum scale factor
+  /// - [sizeChangeThreshold] - Threshold for triggering rebuilds (0.0-1.0). Defaults to 0.05 (5%) for mobile/tablet and 0.0 (0%) for desktop/web (rebuild on any change). Set manually to values like 0.01 for a 1% threshold if desired.
+  const ScaleKitBuilder({
+    super.key,
+    required this.child,
+    required this.designWidth,
+    required this.designHeight,
+    this.designType = DeviceType.mobile,
+    this.deviceTypeOverride,
+    this.minScale,
+    this.maxScale,
+    this.mobileLandscapeFontBoost,
+    this.tabletLandscapeFontBoost,
+    this.desktopLandscapeFontBoost,
+    this.mobileLandscapeSizeBoost,
+    this.tabletLandscapeSizeBoost,
+    this.desktopLandscapeSizeBoost,
+    this.mobilePortraitFontBoost,
+    this.tabletPortraitFontBoost,
+    this.desktopPortraitFontBoost,
+    this.mobilePortraitSizeBoost,
+    this.tabletPortraitSizeBoost,
+    this.desktopPortraitSizeBoost,
+    this.autoScale = true,
+    this.autoScaleLandscape = true,
+    this.autoScalePortrait = false,
+    this.enabled = true,
+    this.lockDesktopPlatforms = false,
+    this.lockDesktopAsTablet = false,
+    this.lockDesktopAsMobile = false,
+    this.breakpoints = const ScaleBreakpoints(),
+    this.enabledListenable,
+    this.sizeChangeThreshold,
+  }) : assert(
+         !(lockDesktopAsTablet && lockDesktopAsMobile),
+         'lockDesktopAsTablet and lockDesktopAsMobile cannot both be true.',
+       );
+
+  @override
+  State<ScaleKitBuilder> createState() => _ScaleKitBuilderState();
+}
+
+class _ScaleKitBuilderState extends State<ScaleKitBuilder> {
+  Size? _previousSize;
+  Orientation? _previousOrientation;
+  Locale? _previousLocale;
+  bool _isInitialized = false;
+  VoidCallback? _enabledListener;
+  int _rebuildTick = 0;
+
+  /// Get the size change threshold with platform-aware defaults.
+  double _getSizeChangeThreshold() {
+    if (widget.sizeChangeThreshold != null) {
+      return widget.sizeChangeThreshold!;
+    }
+    // Default: 5% for mobile/tablet, 0% for desktop/web (rebuild on any change)
+    if (defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.linux ||
+        defaultTargetPlatform == TargetPlatform.fuchsia ||
+        kIsWeb) {
+      return 0.0; // Rebuild on any change for desktop/web
+    }
+    return 0.05; // 5% for mobile/tablet
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeScaleManager();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _checkForChanges();
+  }
+
+  @override
+  void didUpdateWidget(covariant ScaleKitBuilder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_isInitialized) return;
+
+    bool reapply = false;
+
+    if (oldWidget.deviceTypeOverride != widget.deviceTypeOverride) {
+      ScaleManager.instance.setDeviceOverride(widget.deviceTypeOverride);
+      reapply = true;
+    }
+
+    if (oldWidget.lockDesktopPlatforms != widget.lockDesktopPlatforms) {
+      ScaleManager.instance.setDesktopLock(widget.lockDesktopPlatforms);
+      reapply = true;
+    }
+
+    if (oldWidget.breakpoints != widget.breakpoints) {
+      ScaleManager.instance.setBreakpoints(widget.breakpoints);
+      reapply = true;
+    }
+
+    if (oldWidget.lockDesktopAsTablet != widget.lockDesktopAsTablet ||
+        oldWidget.lockDesktopAsMobile != widget.lockDesktopAsMobile) {
+      ScaleManager.instance.setDesktopLockFallback(
+        widget.lockDesktopAsTablet
+            ? DesktopLockFallback.tablet
+            : widget.lockDesktopAsMobile
+            ? DesktopLockFallback.mobile
+            : DesktopLockFallback.desktop,
+      );
+      reapply = true;
+    }
+
+    if (oldWidget.autoScale != widget.autoScale) {
+      ScaleManager.instance.setAutoScale(widget.autoScale);
+      reapply = true;
+    }
+
+    if (oldWidget.minScale != widget.minScale ||
+        oldWidget.maxScale != widget.maxScale) {
+      ScaleManager.instance.setScaleLimits(
+        minScale: widget.minScale,
+        maxScale: widget.maxScale,
+      );
+      reapply = true;
+    }
+
+    if (oldWidget.enabled != widget.enabled) {
+      ScaleManager.instance.setEnabled(widget.enabled);
+      reapply = true;
+    }
+
+    if (oldWidget.autoScaleLandscape != widget.autoScaleLandscape ||
+        oldWidget.autoScalePortrait != widget.autoScalePortrait) {
+      ScaleManager.instance.setAutoScaleOrientation(
+        landscape: widget.autoScaleLandscape,
+        portrait: widget.autoScalePortrait,
+      );
+      reapply = true;
+    }
+
+    if (oldWidget.mobileLandscapeFontBoost != widget.mobileLandscapeFontBoost ||
+        oldWidget.tabletLandscapeFontBoost != widget.tabletLandscapeFontBoost ||
+        oldWidget.desktopLandscapeFontBoost !=
+            widget.desktopLandscapeFontBoost ||
+        oldWidget.mobileLandscapeSizeBoost != widget.mobileLandscapeSizeBoost ||
+        oldWidget.tabletLandscapeSizeBoost != widget.tabletLandscapeSizeBoost ||
+        oldWidget.desktopLandscapeSizeBoost !=
+            widget.desktopLandscapeSizeBoost ||
+        oldWidget.mobilePortraitFontBoost != widget.mobilePortraitFontBoost ||
+        oldWidget.tabletPortraitFontBoost != widget.tabletPortraitFontBoost ||
+        oldWidget.desktopPortraitFontBoost != widget.desktopPortraitFontBoost ||
+        oldWidget.mobilePortraitSizeBoost != widget.mobilePortraitSizeBoost ||
+        oldWidget.tabletPortraitSizeBoost != widget.tabletPortraitSizeBoost ||
+        oldWidget.desktopPortraitSizeBoost != widget.desktopPortraitSizeBoost) {
+      ScaleManager.instance.setBoosts(
+        mobileLandscapeFontBoost: widget.mobileLandscapeFontBoost,
+        tabletLandscapeFontBoost: widget.tabletLandscapeFontBoost,
+        desktopLandscapeFontBoost: widget.desktopLandscapeFontBoost,
+        mobileLandscapeSizeBoost: widget.mobileLandscapeSizeBoost,
+        tabletLandscapeSizeBoost: widget.tabletLandscapeSizeBoost,
+        desktopLandscapeSizeBoost: widget.desktopLandscapeSizeBoost,
+        mobilePortraitFontBoost: widget.mobilePortraitFontBoost,
+        tabletPortraitFontBoost: widget.tabletPortraitFontBoost,
+        desktopPortraitFontBoost: widget.desktopPortraitFontBoost,
+        mobilePortraitSizeBoost: widget.mobilePortraitSizeBoost,
+        tabletPortraitSizeBoost: widget.tabletPortraitSizeBoost,
+        desktopPortraitSizeBoost: widget.desktopPortraitSizeBoost,
+      );
+      reapply = true;
+    }
+
+    if (reapply) {
+      // Recalculate scale and clear caches
+      _onSizeOrOrientationChange();
+    }
+
+    if (oldWidget.enabledListenable != widget.enabledListenable) {
+      _detachEnabledListenable();
+      _attachEnabledListenable();
+    }
+  }
+
+  void _initializeScaleManager() {
+    if (!_isInitialized) {
+      ScaleManager.instance.init(
+        context: context,
+        designWidth: widget.designWidth,
+        designHeight: widget.designHeight,
+        designType: widget.designType,
+        minScale: widget.minScale,
+        maxScale: widget.maxScale,
+      );
+      ScaleManager.instance.setDeviceOverride(widget.deviceTypeOverride);
+      ScaleManager.instance.setAutoScale(widget.autoScale);
+      ScaleManager.instance.setEnabled(widget.enabled);
+      ScaleManager.instance.setDesktopLock(widget.lockDesktopPlatforms);
+      ScaleManager.instance.setBreakpoints(widget.breakpoints);
+      ScaleManager.instance.setDesktopLockFallback(
+        widget.lockDesktopAsTablet
+            ? DesktopLockFallback.tablet
+            : widget.lockDesktopAsMobile
+            ? DesktopLockFallback.mobile
+            : DesktopLockFallback.desktop,
+      );
+      ScaleManager.instance.setAutoScaleOrientation(
+        landscape: widget.autoScaleLandscape,
+        portrait: widget.autoScalePortrait,
+      );
+      ScaleManager.instance.setBoosts(
+        mobileLandscapeFontBoost: widget.mobileLandscapeFontBoost,
+        tabletLandscapeFontBoost: widget.tabletLandscapeFontBoost,
+        desktopLandscapeFontBoost: widget.desktopLandscapeFontBoost,
+        mobileLandscapeSizeBoost: widget.mobileLandscapeSizeBoost,
+        tabletLandscapeSizeBoost: widget.tabletLandscapeSizeBoost,
+        desktopLandscapeSizeBoost: widget.desktopLandscapeSizeBoost,
+        mobilePortraitFontBoost: widget.mobilePortraitFontBoost,
+        tabletPortraitFontBoost: widget.tabletPortraitFontBoost,
+        desktopPortraitFontBoost: widget.desktopPortraitFontBoost,
+        mobilePortraitSizeBoost: widget.mobilePortraitSizeBoost,
+        tabletPortraitSizeBoost: widget.tabletPortraitSizeBoost,
+        desktopPortraitSizeBoost: widget.desktopPortraitSizeBoost,
+      );
+      ScaleManager.instance.setScaleLimits(
+        minScale: widget.minScale,
+        maxScale: widget.maxScale,
+      );
+      _isInitialized = true;
+
+      _attachEnabledListenable();
+
+      _previousSize = MediaQuery.sizeOf(context);
+      _previousOrientation = MediaQuery.orientationOf(context);
+
+      // Safely get locale - may not be available during initialization
+      _previousLocale = _localeFromContext(context);
+      FontConfig.instance.setLanguage(_previousLocale!.languageCode);
+    }
+  }
+
+  void _attachEnabledListenable() {
+    if (widget.enabledListenable != null) {
+      _enabledListener = () {
+        ScaleManager.instance.setEnabled(widget.enabledListenable!.value);
+        _onSizeOrOrientationChange();
+      };
+      widget.enabledListenable!.addListener(_enabledListener!);
+    }
+  }
+
+  void _detachEnabledListenable() {
+    if (widget.enabledListenable != null && _enabledListener != null) {
+      widget.enabledListenable!.removeListener(_enabledListener!);
+      _enabledListener = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    ScaleManager.instance.setDesktopLock(false);
+    ScaleManager.instance.setDesktopLockFallback(DesktopLockFallback.desktop);
+    ScaleManager.instance.setDeviceOverride(null);
+    _detachEnabledListenable();
+    super.dispose();
+  }
+
+  void _checkForChanges() {
+    final currentSize = MediaQuery.sizeOf(context);
+    final currentOrientation = MediaQuery.orientationOf(context);
+
+    // Safely get locale
+    final currentLocale = _localeFromContext(context);
+
+    if (!_isInitialized) {
+      _initializeScaleManager();
+      return;
+    }
+
+    bool shouldUpdate = false;
+
+    // Check for locale/language change
+    if (_previousLocale != null && currentLocale != _previousLocale) {
+      FontConfig.instance.setLanguage(currentLocale.languageCode);
+      shouldUpdate = true;
+    }
+
+    if (_previousOrientation != null &&
+        currentOrientation != _previousOrientation) {
+      shouldUpdate = true;
+    }
+
+    if (_previousSize != null) {
+      final widthChange = (currentSize.width - _previousSize!.width).abs();
+      final heightChange = (currentSize.height - _previousSize!.height).abs();
+
+      final widthChangePercent =
+          _previousSize!.width > 0 ? widthChange / _previousSize!.width : 0.0;
+      final heightChangePercent =
+          _previousSize!.height > 0
+              ? heightChange / _previousSize!.height
+              : 0.0;
+
+      final threshold = _getSizeChangeThreshold();
+      // If threshold is 0, rebuild on any change
+      // Otherwise, rebuild if change exceeds threshold or is a large foldable transition (>50%)
+      final significantChange =
+          threshold == 0.0
+              ? (widthChangePercent > 0.0 || heightChangePercent > 0.0)
+              : (widthChangePercent > threshold ||
+                  heightChangePercent > threshold ||
+                  widthChangePercent > 0.5 ||
+                  heightChangePercent > 0.5);
+
+      if (significantChange) {
+        shouldUpdate = true;
+      }
+    }
+
+    if (shouldUpdate) {
+      _previousSize = currentSize;
+      _previousOrientation = currentOrientation;
+      _previousLocale = currentLocale;
+
+      _onSizeOrOrientationChange();
+    }
+  }
+
+  void _onSizeOrOrientationChange() {
+    ScaleManager.instance.updateFromContext(context);
+
+    ScaleValueCache.instance.clearCache();
+
+    // Notify FontConfig listeners if language changed
+    final currentLocale = _localeFromContext(context);
+    if (_previousLocale != null && currentLocale != _previousLocale) {
+      FontConfig.instance.onLanguageChanged?.call();
+    }
+
+    if (mounted) {
+      setState(() {
+        _rebuildTick++;
+      });
+    }
+  }
+
+  Locale _localeFromContext(BuildContext context) {
+    return Localizations.maybeLocaleOf(context) ??
+        WidgetsBinding.instance.platformDispatcher.locale;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleKitScope(tick: _rebuildTick, child: widget.child);
+  }
+}
+
+/// Internal scope used to notify descendants when ScaleKit recalculates.
+class ScaleKitScope extends InheritedWidget {
+  const ScaleKitScope({super.key, required this.tick, required super.child});
+
+  final int tick;
+
+  static ScaleKitScope? maybeOf(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<ScaleKitScope>();
+  }
+
+  static void watch(BuildContext context) {
+    maybeOf(context);
+  }
+
+  @override
+  bool updateShouldNotify(covariant ScaleKitScope oldWidget) {
+    return oldWidget.tick != tick;
+  }
+}

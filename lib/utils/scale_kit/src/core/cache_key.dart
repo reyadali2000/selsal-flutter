@@ -1,0 +1,60 @@
+/// Cache key for storing scaled values
+class CacheKey {
+  final Object value;
+  final ScaleType scaleType;
+  final int contextKey; // Integer hash of device state
+
+  CacheKey({
+    required this.value,
+    required this.scaleType,
+    required this.contextKey,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is CacheKey &&
+        other.value == value &&
+        other.scaleType == scaleType &&
+        other.contextKey == contextKey;
+  }
+
+  @override
+  int get hashCode => Object.hash(value, scaleType, contextKey);
+}
+
+/// Scale type enum for different scaling operations
+enum ScaleType {
+  width,
+  height,
+  fontSize,
+  fontSizeWithFactor,
+  radius,
+  radiusSafe,
+  radiusFixed,
+  screenWidth,
+  screenHeight,
+  padding,
+  margin,
+  borderRadius,
+  borderRadiusSafe,
+  borderRadiusFixed,
+  widthMax,
+  widthMin,
+  widthClamp,
+  heightMax,
+  heightMin,
+  heightClamp,
+  screenWidthMax,
+  screenWidthMin,
+  screenWidthClamp,
+  screenHeightMax,
+  screenHeightMin,
+  screenHeightClamp,
+  radiusMax,
+  radiusMin,
+  radiusClamp,
+  fontSizeMax,
+  fontSizeMin,
+  fontSizeClamp,
+}

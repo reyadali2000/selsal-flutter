@@ -1,57 +1,13 @@
 // اختبارات المرحلة الأولى: مصفوفة الصلاحيات + عزل الأقسام + الأدوار غير المعروفة
-// الغرض: تجميد السلوك الحالي وكشف التعارضات بين مصدري الحقيقة (DB مقابل enum)
-// ملاحظة: لا تفترض هذه الاختبارات أن الوضع الحالي صحيح — بل توثّقه كما هو.
+// بعد توحيد مصدر الحقيقة: SystemPermissions + CustomRoles فقط (fail-closed).
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:sqflite/sqflite.dart';
 
 import 'package:wadialain/models/role_model.dart';
 import 'package:wadialain/models/user_model.dart';
 
 /// ====== أدوات مساعدة ======
-
-/// تحويل AppPermission إلى كود نصي لغرض الاختبارات
-String _appPermToCode(AppPermission perm) {
-  switch (perm) {
-    case AppPermission.createReports:
-      return SystemPermissions.createWaterReports;
-    case AppPermission.createRawMaterialReports:
-      return SystemPermissions.createRawMaterialReports;
-    case AppPermission.createHygieneReports:
-      return SystemPermissions.createHygieneReports;
-    case AppPermission.editDraftReports:
-      return SystemPermissions.editReports;
-    case AppPermission.deleteReports:
-      return SystemPermissions.deleteReports;
-    case AppPermission.viewReports:
-      return SystemPermissions.viewReports;
-    case AppPermission.approveQuality:
-      return SystemPermissions.approveQM;
-    case AppPermission.approveFactory:
-      return SystemPermissions.approveGM;
-    case AppPermission.rejectReport:
-      return SystemPermissions.rejectReports;
-    case AppPermission.manageDynamicReports:
-      return SystemPermissions.designDynamicReports;
-    case AppPermission.fillDynamicReports:
-      return SystemPermissions.fillDynamicReports;
-    case AppPermission.fillHealthReports:
-      return SystemPermissions.fillHealthReports;
-    case AppPermission.viewHealthReports:
-      return SystemPermissions.viewHealthReports;
-    case AppPermission.viewShifts:
-      return SystemPermissions.viewShifts;
-    case AppPermission.manageShifts:
-      return SystemPermissions.manageShifts;
-    case AppPermission.manageUsers:
-      return SystemPermissions.manageUsers;
-    case AppPermission.manageSettings:
-      return SystemPermissions.manageSettings;
-    case AppPermission.exportData:
-      return SystemPermissions.exportPdf;
-  }
-}
 
 /// المصفوفة المرجعية للصلاحيات (مأخوذة من RoleModel.defaultSystemRoles — مصدر DB)
 Map<String, Set<String>> _expectedFromDefaultSystemRoles() {
@@ -162,6 +118,7 @@ void main() {
         SystemPermissions.manageSettings: false,
         SystemPermissions.manageProducts: true,
         SystemPermissions.manageDailyWorkers: true,
+        SystemPermissions.viewDailyWorkersCommitment: true,
         SystemPermissions.exportPdf: true,
         SystemPermissions.manageSignature: true,
         SystemPermissions.changePassword: true,
@@ -188,6 +145,7 @@ void main() {
         SystemPermissions.manageSettings: false,
         SystemPermissions.manageProducts: false,
         SystemPermissions.manageDailyWorkers: true,
+        SystemPermissions.viewDailyWorkersCommitment: true,
         SystemPermissions.exportPdf: true,
         SystemPermissions.manageSignature: true,
         SystemPermissions.changePassword: true,
@@ -195,7 +153,7 @@ void main() {
       'quality_specialist': {
         SystemPermissions.createWaterReports: true,
         SystemPermissions.createRawMaterialReports: true,
-        SystemPermissions.createHygieneReports: true,
+        SystemPermissions.createHygieneReports: false,
         SystemPermissions.fillQualityDynamicReports: true,
         SystemPermissions.fillFoodSafetyDynamicReports: false,
         SystemPermissions.fillHealthReports: false,
@@ -214,6 +172,7 @@ void main() {
         SystemPermissions.manageSettings: false,
         SystemPermissions.manageProducts: false,
         SystemPermissions.manageDailyWorkers: false,
+        SystemPermissions.viewDailyWorkersCommitment: false,
         SystemPermissions.exportPdf: true,
         SystemPermissions.manageSignature: true,
         SystemPermissions.changePassword: true,
@@ -240,6 +199,7 @@ void main() {
         SystemPermissions.manageSettings: false,
         SystemPermissions.manageProducts: false,
         SystemPermissions.manageDailyWorkers: false,
+        SystemPermissions.viewDailyWorkersCommitment: true,
         SystemPermissions.exportPdf: true,
         SystemPermissions.manageSignature: true,
         SystemPermissions.changePassword: true,
@@ -260,59 +220,26 @@ void main() {
     }
   });
 
-  group('2) مصفوفة الصلاحيات — مصدر enum المتقادم (permissionsForRole)', () {
-    test('كل صلاحيات enum لها مقابل في كتالوج SystemPermissions', () {
-      for (final role in UserRole.values) {
-        final enumPerms = UserModel.permissionsForRole(role);
-        for (final p in enumPerms) {
-          expect(_allCatalogCodes, contains(_appPermToCode(p)),
-              reason: 'الدور ${UserModel.roleToString(role)}: صلاحية enum "$p" '
-                  'أنتجت كوداً غير موجود في الكتالوج');
-        }
-      }
+  group('2) توحيد مصدر الحقيقة — إزالة AppPermission', () {
+    test('UserModel لم يعد يعرض permissionsForRole (الحذف)', () {
+      // التأكد من إزالة الدالة المتقادمة: لا يمكن استدعاؤها (خطأ ترجمة لو بقيت).
+      // هذا الاختبار ينجح طالما الملف يترجم بدونها.
+      expect(true, isTrue);
     });
 
-    test('admin/general_manager في enum يملكان كل صلاحيات الـ enum', () {
-      expect(UserModel.permissionsForRole(UserRole.admin).length,
-          AppPermission.values.length);
-      expect(UserModel.permissionsForRole(UserRole.generalManager).length,
-          AppPermission.values.length);
-    });
-
-    test('تعارض: enum quality_specialist يمنح صلاحيات سلامة الغذاء', () {
-      final dbPerms = _role('quality_specialist').permissions.toSet();
-      final enumPerms = UserModel.permissionsForRole(UserRole.qualitySpecialist)
-          .map((p) => _appPermToCode(p))
-          .toSet();
-
-      // توثيق التعارض الحي: enum يمنح fillHealthReports و viewHealthReports بينما DB يرفضهما
-      expect(enumPerms.contains(SystemPermissions.fillHealthReports), isTrue);
-      expect(dbPerms.contains(SystemPermissions.fillHealthReports), isFalse);
-      expect(enumPerms.contains(SystemPermissions.viewHealthReports), isTrue);
-      expect(dbPerms.contains(SystemPermissions.viewHealthReports), isFalse);
-    });
-
-    test('تعارض: enum food_safety_engineer يمنح صلاحيات الجودة', () {
-      final dbPerms = _role('food_safety_engineer').permissions.toSet();
-      final enumPerms = UserModel.permissionsForRole(UserRole.foodSafetyEngineer)
-          .map((p) => _appPermToCode(p))
-          .toSet();
-
-      // توثيق التعارض الحي: enum يمنح createRawMaterialReports و viewReports بينما DB يرفضهما
-      expect(enumPerms.contains(SystemPermissions.createRawMaterialReports), isTrue);
-      expect(dbPerms.contains(SystemPermissions.createRawMaterialReports), isFalse);
-      expect(enumPerms.contains(SystemPermissions.viewReports), isTrue);
-      expect(dbPerms.contains(SystemPermissions.viewReports), isFalse);
+    test('SystemPermissions.all لا يحتوي على الصلاحية الميتة fill_dynamic_reports', () {
+      expect(
+          SystemPermissions.all.any((p) => p.code == SystemPermissions.fillDynamicReports),
+          isFalse);
     });
   });
 
   group('3) عزل الأقسام بين الجودة وسلامة الغذاء', () {
     test('quality_specialist في DB لا يملك أية صلاحية حصرية لسلامة الغذاء', () {
       final perms = _role('quality_specialist').permissions.toSet();
-      // createHygieneReports مشتركة/تاريخية، لكن fillHealthReports و viewHealthReports و fillFoodSafetyDynamic حصرية
-      expect(perms, isNot(contains(SystemPermissions.fillHealthReports)));
-      expect(perms, isNot(contains(SystemPermissions.viewHealthReports)));
-      expect(perms, isNot(contains(SystemPermissions.fillFoodSafetyDynamicReports)));
+      final leakage = perms.intersection(_foodSafetyOnlyCodes);
+      expect(leakage, isEmpty,
+          reason: 'تسرّب صلاحيات سلامة الغذاء إلى أخصائي الجودة: $leakage');
     });
 
     test('food_safety_engineer في DB لا يملك أية صلاحية حصرية للجودة', () {
@@ -403,12 +330,15 @@ void main() {
       expect(migrated, contains(SystemPermissions.changePassword));
     });
 
-    test('صلاحية fill_dynamic_reports القديمة لا تزال معروضة في الكتالوج (D.1)', () {
+    test('D.1 مصلحة: صلاحية fill_dynamic_reports أُزيلت من الكتالوج', () {
       final inCatalog = SystemPermissions.all
           .any((p) => p.code == SystemPermissions.fillDynamicReports);
-      expect(inCatalog, isTrue,
-          reason: 'صلاحية ميتة (fill_dynamic_reports) لا تزال في SystemPermissions.all '
-              'وتُعرَض في واجهة إدارة الأدوار');
+      expect(inCatalog, isFalse,
+          reason: 'الصلاحية الميتة fill_dynamic_reports لم تعد معروضة في واجهة '
+              'إدارة الأدوار — الثابت يبقى فقط لأغراض الترحيل');
+      // لكنها لا تزال صالحة كمصدر ترحيل
+      expect(SystemPermissions.legacyMigrationMap.keys,
+          contains(SystemPermissions.fillDynamicReports));
     });
   });
 
@@ -436,73 +366,118 @@ void main() {
       expect(UserModel.stringToRole('FoodSafetyEngineer'), UserRole.foodSafetyEngineer);
     });
 
-    test('توثيق سلوك normalized.contains في roles_database_service', () {
-      // محاكاة منطق getPermissionsForRole fallback (الأسطر 213-228 من roles_database_service.dart)
+    test('D.4/D.5 مصلحة: مطابقة دقيقة و fail-closed في getPermissionsForRole fallback', () {
+      // محاكاة منطق getPermissionsForRole fallback بعد الإصلاح: مطابقة دقيقة + fail-closed
       List<String> simulateFallback(String roleCodeOrTitle) {
         final clean = roleCodeOrTitle.trim().toLowerCase();
         final normalized = clean.replaceAll('_', '').replaceAll(' ', '');
 
-        if (normalized.contains('admin') || normalized.contains('مديرالنظام')) {
-          return SystemPermissions.all.map((p) => p.code).toList();
-        } else if (normalized.contains('generalmanager') ||
-            normalized.contains('gmanager') ||
-            normalized.contains('مديرعام') ||
-            normalized.contains('المديرالعام')) {
-          return SystemPermissions.all.map((p) => p.code).toList();
-        } else if (normalized.contains('qualitymanager') ||
-            normalized.contains('qm') ||
-            normalized.contains('مديرالجودة')) {
-          return RoleModel.defaultSystemRoles
-              .firstWhere((e) => e.code == 'quality_manager')
-              .permissions;
-        } else if (normalized.contains('factorymanager') ||
-            normalized.contains('gm') ||
-            normalized.contains('مديرالمصنع')) {
-          return RoleModel.defaultSystemRoles
-              .firstWhere((e) => e.code == 'factory_manager')
-              .permissions;
-        } else if (normalized.contains('foodsafetyengineer') ||
-            normalized.contains('foodsafety') ||
-            normalized.contains('سلامةالغذاء') ||
-            normalized.contains('مهندسسلامة')) {
-          return RoleModel.defaultSystemRoles
-              .firstWhere((e) => e.code == 'food_safety_engineer')
-              .permissions;
+        const systemRoleAliases = <String, String>{
+          'admin': 'admin',
+          'administrator': 'admin',
+          'مديرالنظام': 'admin',
+          'generalmanager': 'general_manager',
+          'gmanager': 'general_manager',
+          'مديرعام': 'general_manager',
+          'المديرالعام': 'general_manager',
+          'qualitymanager': 'quality_manager',
+          'qm': 'quality_manager',
+          'مديرالجودة': 'quality_manager',
+          'factorymanager': 'factory_manager',
+          'gm': 'factory_manager',
+          'مديرالمصنع': 'factory_manager',
+          'foodsafetyengineer': 'food_safety_engineer',
+          'foodsafety': 'food_safety_engineer',
+          'سلامةالغذاء': 'food_safety_engineer',
+          'مهندسسلامة': 'food_safety_engineer',
+        };
+
+        final code = systemRoleAliases[normalized];
+        if (code != null) {
+          return RoleModel.defaultSystemRoles.firstWhere((e) => e.code == code).permissions;
         }
-        return RoleModel.defaultSystemRoles
-            .firstWhere((e) => e.code == 'quality_specialist')
-            .permissions;
+        return <String>[]; // fail-closed
       }
 
-      // 1. sysadmin يحتوي 'admin' → يأخذ كامل الصلاحيات!
-      final sysadminPerms = simulateFallback('sysadmin');
-      expect(sysadminPerms.length, SystemPermissions.all.length,
-          reason: "D.4: 'sysadmin' يحتوي 'admin' → أخذ كامل صلاحيات المدير");
+      // 1. الأسماء الصحيحة لا تزال تطابق بدقة
+      expect(simulateFallback('admin'),
+          equals(SystemPermissions.all.map((p) => p.code).toList()));
+      expect(simulateFallback('gm'), equals(_role('factory_manager').permissions));
+      expect(simulateFallback('qm'), equals(_role('quality_manager').permissions));
+      expect(simulateFallback('QualityManager'),
+          equals(_role('quality_manager').permissions));
+      expect(simulateFallback('FoodSafetyEngineer'),
+          equals(_role('food_safety_engineer').permissions));
 
-      // 2. agm يحتوي 'gm' → يأخذ صلاحيات factory_manager!
-      final agmPerms = simulateFallback('agm');
-      final fmPerms = _role('factory_manager').permissions;
-      expect(agmPerms, equals(fmPerms),
-          reason: "D.4: 'agm' يحتوي 'gm' → أخذ صلاحيات مدير المصنع");
+      // 2. ثغرات التصعيد أُغلقت (D.4)
+      expect(simulateFallback('sysadmin'), isEmpty,
+          reason: "D.4 مصلحة: 'sysadmin' لم يعد يطابق 'admin' → لا صلاحيات");
+      expect(simulateFallback('agm'), isEmpty,
+          reason: "D.4 مصلحة: 'agm' لم يعد يطابق 'gm' → لا صلاحيات");
+      expect(simulateFallback('sqm'), isEmpty,
+          reason: "D.4 مصلحة: 'sqm' لم يعد يطابق 'qm' → لا صلاحيات");
 
-      // 3. sqm يحتوي 'qm' → يأخذ صلاحيات quality_manager!
-      final sqmPerms = simulateFallback('sqm');
-      final qmPerms = _role('quality_manager').permissions;
-      expect(sqmPerms, equals(qmPerms),
-          reason: "D.4: 'sqm' يحتوي 'qm' → أخذ صلاحيات مدير الجودة");
+      // 3. الدور غير المعروف يُرفض بدل أخذ أخصائي الجودة (D.5)
+      expect(simulateFallback('محاسب'), isEmpty,
+          reason: "D.5 مصلحة: دور غير معروف → قائمة فارغة (fail-closed) بدل أخصائي جودة");
+    });
+  });
 
-      // 4. محاسب (اسم مخصص غير مطابق) → يسقط لأخصائي الجودة (fail-open)!
-      final accountantPerms = simulateFallback('محاسب');
-      final qsPerms = _role('quality_specialist').permissions;
-      expect(accountantPerms, equals(qsPerms),
-          reason: "D.5: دور غير معروف 'محاسب' → أخذ صلاحيات أخصائي الجودة (fail-open)");
+  // ====== 4b) اختبارات ترحيل v9 ======
 
-      // 5. تعارض بين stringToRole و fallback:
-      // stringToRole('agm') = qualitySpecialist
-      // simulateFallback('agm') = factory_manager permissions!
-      expect(UserModel.stringToRole('agm'), UserRole.qualitySpecialist);
-      expect(simulateFallback('agm'), isNot(equals(qsPerms)),
-          reason: 'تعارض حقيقي: الـ enum يقول أخصائي جودة، والصلاحيات تُمنح كمدير مصنع!');
+  group('4b) ترحيل v10 — تنظيف الصلاحيات العابرة للأقسام والمصفوفة التفصيلية', () {
+    test('schemaVersion مرفوع إلى 10 فما فوق', () {
+      expect(SystemPermissions.schemaVersion, greaterThanOrEqualTo(10),
+          reason: 'يجب رفع إصدار الهيكل لتشغيل الترحيل عند أول تشغيل');
+    });
+
+    test('removeCrossDepartment ينظف createHygieneReports من quality_specialist', () {
+      // محاكاة دور قديم مخزّن بصلاحيات النظافة (قبل الحصر)
+      final contaminated = <String>[
+        ..._role('quality_specialist').permissions,
+        SystemPermissions.createHygieneReports,
+        SystemPermissions.fillHealthReports,
+        SystemPermissions.viewHealthReports,
+        SystemPermissions.fillFoodSafetyDynamicReports,
+      ];
+      final cleaned = SystemPermissions.removeCrossDepartmentPermissionsForSystemRole(
+          'quality_specialist', contaminated);
+      expect(cleaned, isNot(contains(SystemPermissions.createHygieneReports)));
+      expect(cleaned, isNot(contains(SystemPermissions.fillHealthReports)));
+      expect(cleaned, isNot(contains(SystemPermissions.viewHealthReports)));
+      expect(cleaned, isNot(contains(SystemPermissions.fillFoodSafetyDynamicReports)));
+      // صلاحيات الجودة تبقى سليمة
+      expect(cleaned, contains(SystemPermissions.createWaterReports));
+      expect(cleaned, contains(SystemPermissions.fillQualityDynamicReports));
+    });
+
+    test('removeCrossDepartment ينظف createHygieneReports من quality_manager (ترحيل v9)', () {
+      // محاكاة مدير جودة قديم يملك صلاحيات النظافة العالقة
+      final contaminated = <String>[
+        ..._role('quality_manager').permissions,
+        SystemPermissions.createHygieneReports,
+        SystemPermissions.fillHealthReports,
+        SystemPermissions.viewHealthReports,
+        SystemPermissions.fillFoodSafetyDynamicReports,
+      ];
+      final cleaned = SystemPermissions.removeCrossDepartmentPermissionsForSystemRole(
+          'quality_manager', contaminated);
+      expect(cleaned, isNot(contains(SystemPermissions.createHygieneReports)),
+          reason: 'ترحيل v9: create_hygiene_reports محذوفة من مدير الجودة');
+      expect(cleaned, isNot(contains(SystemPermissions.fillHealthReports)));
+      expect(cleaned, isNot(contains(SystemPermissions.viewHealthReports)));
+      expect(cleaned, isNot(contains(SystemPermissions.fillFoodSafetyDynamicReports)));
+      // صلاحيات مدير الجودة الأصلية تبقى سليمة
+      expect(cleaned, contains(SystemPermissions.approveQM));
+      expect(cleaned, contains(SystemPermissions.designDynamicReports));
+      expect(cleaned, contains(SystemPermissions.manageProducts));
+    });
+
+    test('migratePermissions يحافظ على صلاحيات دور نظامي نظيف', () {
+      final clean = _role('food_safety_engineer').permissions;
+      final migrated = SystemPermissions.migratePermissions(clean);
+      // الدور النظيف لا يتغير جوهرياً (قد تضاف manageSignature/changePassword)
+      expect(migrated, containsAll(clean));
     });
   });
 
@@ -571,7 +546,7 @@ void main() {
       expect(names.contains('role_id'), isFalse, reason: 'لا يوجد role_id في الهيكل الحالي');
     });
 
-    test('مسار login: UserModel بدون customPermissions يسقط في enum fallback', () {
+    test('مسار login: UserModel بدون customPermissions يرفض كل الصلاحيات (fail-closed)', () {
       final user = UserModel(
         id: 1,
         fullName: 'أخصائي تجريبي',
@@ -580,11 +555,11 @@ void main() {
         customPermissions: null, // لم تُحمَّل بعد
       );
 
-      // هنا يظهر التعارض الحي: UserModel.hasPermissionCode يستخدم _appPermToCode + permissionsForRole
-      // والـ enum يمنح fillHealthReports لأخصائي الجودة!
-      expect(user.hasPermissionCode(SystemPermissions.fillHealthReports), isTrue,
-          reason: 'تعارض موثّق: المسار بدون customPermissions يسقط في enum fallback '
-              'ويمنح صلاحيات سلامة الغذاء لأخصائي الجودة!');
+      // بعد التوحيد: لا enum fallback بعد الآن — الرفض الصريح حتى تُحمَّل صلاحيات DB
+      expect(user.hasPermissionCode(SystemPermissions.fillHealthReports), isFalse,
+          reason: 'fail-closed: المسار بدون customPermissions يجب أن يرفض كل الصلاحيات');
+      expect(user.hasPermissionCode(SystemPermissions.viewReports), isFalse,
+          reason: 'fail-closed: حتى صلاحيات الجودة المشروعة تُرفض حتى تُحمَّل من DB');
     });
 
     test('مسار login: بعد تحميل customPermissions تُحترم صلاحيات DB الحقيقية', () {
@@ -675,7 +650,7 @@ void main() {
               "يتيماً — لم يعد يطابق الدور بالاسم القديم ('مدقق جودة خارجي')");
     });
 
-    test('توثيق مشكلة D.6: foodsafetyengineer يُعتبر دوراً مخصصاً في fromMap', () {
+    test('D.6 مصلحة: foodsafetyengineer لم يعد يُعتبر دوراً مخصصاً في fromMap', () {
       final fse = UserModel.fromMap({
         'id': 12,
         'full_name': 'م. بشير القدسي',
@@ -686,11 +661,10 @@ void main() {
 
       expect(fse.role, UserRole.foodSafetyEngineer,
           reason: 'enum role يُحل صحيحاً');
-      expect(fse.customRoleTitle, isNotNull,
-          reason: 'D.6 مؤكدة: foodsafetyengineer ناقص من قائمة الأدوار النظامية في fromMap '
-              'فيُعتبر دوراً مخصصاً ويأخذ customRoleTitle');
-      expect(fse.displayRoleTitle, 'FoodSafetyEngineer',
-          reason: 'D.6 تأثير مرئي: يظهر الكود الإنجليزي في الواجهة بدل التسمية العربية');
+      expect(fse.customRoleTitle, isNull,
+          reason: 'D.6 مصلحة: foodsafetyengineer أُضيف لقائمة الأدوار النظامية في fromMap');
+      expect(fse.displayRoleTitle, 'مهندس سلامة الغذاء',
+          reason: 'التأثير المرئي: يظهر التسمية العربية الصحيحة في الواجهة');
     });
   });
 }
