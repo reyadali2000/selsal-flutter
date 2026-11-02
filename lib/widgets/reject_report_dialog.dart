@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../constants/app_colors.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart' as intl;
 import 'dart:ui' as ui;

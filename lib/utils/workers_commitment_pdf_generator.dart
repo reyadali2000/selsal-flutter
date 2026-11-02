@@ -4,11 +4,10 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../models/worker_commitment_models.dart';
-import '../services/pdf/arabic_pdf_service.dart';
 
 class WorkersCommitmentPdfGenerator {
   static const PdfColor _primaryDark = PdfColor.fromInt(0xFF1B365D);
-  static const PdfColor _primaryLight = PdfColor.fromInt(0xFF00A3E0);
+
   static const PdfColor _tableHeaderBg = PdfColor.fromInt(0xFFEBF3FB);
   static const PdfColor _tableRowAlt = PdfColor.fromInt(0xFFF9FBFE);
   static const PdfColor _borderColor = PdfColor.fromInt(0xFFD0D7DE);

@@ -686,7 +686,7 @@ class DailyWorkersManagementView extends StatelessWidget {
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<int>(
-                        value: selectedBranchId,
+                        initialValue: selectedBranchId,
                         isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'المصنع / الفرع *',

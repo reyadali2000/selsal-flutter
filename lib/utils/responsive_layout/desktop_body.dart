@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class MyDesktopBody extends StatelessWidget {
-  const MyDesktopBody({Key? key}) : super(key: key);
+  const MyDesktopBody({super.key});
 
   @override
   Widget build(BuildContext context) {

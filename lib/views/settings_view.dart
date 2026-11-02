@@ -167,7 +167,7 @@ class SettingsView extends StatelessWidget {
                 return SwitchListTile(
                   value: isDark,
                   onChanged: (v) => ThemeService.to.setDarkMode(v),
-                  activeColor: isDark ? AppColors.darkPrimaryLight : AppColors.primaryDark,
+                  activeThumbColor: isDark ? AppColors.darkPrimaryLight : AppColors.primaryDark,
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                   secondary: Container(

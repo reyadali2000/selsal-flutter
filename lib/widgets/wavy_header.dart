@@ -41,7 +41,7 @@ class WavyHeader extends StatelessWidget {
                 colors: [
                   AppColors.primaryDarkest,
                   AppColors.primaryDark,
-                  const Color(0xFF007791), // سماوي المياه
+                  Color(0xFF007791), // سماوي المياه
                 ],
               ),
             ),

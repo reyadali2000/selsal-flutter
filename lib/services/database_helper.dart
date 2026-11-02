@@ -1112,20 +1112,18 @@ class DatabaseHelper {
 
       // حفظ النتائج مع ضمان وجود المعيار لتفادي فشل الـ Foreign Key
       for (var result in results) {
-        if (result.parameterId != null) {
-          final paramCheck = await txn.query(
-            'TestParameters',
-            where: 'id = ?',
-            whereArgs: [result.parameterId],
-            limit: 1,
-          );
-          if (paramCheck.isEmpty) {
-            await txn.insert('TestParameters', {
-              'id': result.parameterId,
-              'name_ar': 'معيار ',
-              'category': 'General',
-            }, conflictAlgorithm: ConflictAlgorithm.ignore);
-          }
+        final paramCheck = await txn.query(
+          'TestParameters',
+          where: 'id = ?',
+          whereArgs: [result.parameterId],
+          limit: 1,
+        );
+        if (paramCheck.isEmpty) {
+          await txn.insert('TestParameters', {
+            'id': result.parameterId,
+            'name_ar': 'معيار ',
+            'category': 'General',
+          }, conflictAlgorithm: ConflictAlgorithm.ignore);
         }
         final resultData = result.toJson();
         resultData['log_id'] = logId;
@@ -1223,20 +1221,18 @@ class DatabaseHelper {
         [logId],
       );
       for (var result in microResults) {
-        if (result.parameterId != null) {
-          final paramCheck = await txn.query(
-            'TestParameters',
-            where: 'id = ?',
-            whereArgs: [result.parameterId],
-            limit: 1,
-          );
-          if (paramCheck.isEmpty) {
-            await txn.insert('TestParameters', {
-              'id': result.parameterId,
-              'name_ar': 'معيار ',
-              'category': 'Microbiological',
-            }, conflictAlgorithm: ConflictAlgorithm.ignore);
-          }
+        final paramCheck = await txn.query(
+          'TestParameters',
+          where: 'id = ?',
+          whereArgs: [result.parameterId],
+          limit: 1,
+        );
+        if (paramCheck.isEmpty) {
+          await txn.insert('TestParameters', {
+            'id': result.parameterId,
+            'name_ar': 'معيار ',
+            'category': 'Microbiological',
+          }, conflictAlgorithm: ConflictAlgorithm.ignore);
         }
         final resultData = result.toJson();
         resultData['log_id'] = logId;
@@ -2443,56 +2439,74 @@ class DatabaseHelper {
     final db = await instance.database;
     final Map<String, dynamic> data = {'approval_status': approvalStatus};
     if (qmApprovedBy != null) data['qm_approved_by'] = qmApprovedBy;
-    if (qmApprovedAt != null)
+    if (qmApprovedAt != null) {
       data['qm_approved_at'] = qmApprovedAt.toIso8601String();
+    }
     if (gmApprovedBy != null) data['gm_approved_by'] = gmApprovedBy;
-    if (gmApprovedAt != null)
+    if (gmApprovedAt != null) {
       data['gm_approved_at'] = gmApprovedAt.toIso8601String();
+    }
     if (rejectionReason != null) data['rejection_reason'] = rejectionReason;
     if (rejectedBy != null) data['rejected_by'] = rejectedBy;
-    if (rejectionCategory != null)
+    if (rejectionCategory != null) {
       data['rejection_category'] = rejectionCategory;
+    }
     if (severityLevel != null) data['severity_level'] = severityLevel;
     if (rejectionNotes != null) data['rejection_notes'] = rejectionNotes;
     if (affectedProducts != null) data['affected_products'] = affectedProducts;
     if (immediateAction != null) data['immediate_action'] = immediateAction;
     if (correctiveAction != null) data['corrective_action'] = correctiveAction;
     if (correctiveOwner != null) data['corrective_owner'] = correctiveOwner;
-    if (correctiveDueDate != null)
+    if (correctiveDueDate != null) {
       data['corrective_due_date'] = correctiveDueDate.toIso8601String();
+    }
     if (gmDecision != null) data['gm_decision'] = gmDecision;
     if (gmDecisionBy != null) data['gm_decision_by'] = gmDecisionBy;
-    if (gmDecisionAt != null)
+    if (gmDecisionAt != null) {
       data['gm_decision_at'] = gmDecisionAt.toIso8601String();
+    }
     if (gmDecisionNotes != null) data['gm_decision_notes'] = gmDecisionNotes;
-    if (microResultsPending != null)
+    if (microResultsPending != null) {
       data['micro_results_pending'] = microResultsPending ? 1 : 0;
+    }
     if (microEnteredBy != null) data['micro_entered_by'] = microEnteredBy;
-    if (microEnteredAt != null)
+    if (microEnteredAt != null) {
       data['micro_entered_at'] = microEnteredAt.toIso8601String();
-    if (stage1QmApprovedBy != null)
+    }
+    if (stage1QmApprovedBy != null) {
       data['stage1_qm_approved_by'] = stage1QmApprovedBy;
-    if (stage1QmApprovedAt != null)
+    }
+    if (stage1QmApprovedAt != null) {
       data['stage1_qm_approved_at'] = stage1QmApprovedAt.toIso8601String();
-    if (stage1GmApprovedBy != null)
+    }
+    if (stage1GmApprovedBy != null) {
       data['stage1_gm_approved_by'] = stage1GmApprovedBy;
-    if (stage1GmApprovedAt != null)
+    }
+    if (stage1GmApprovedAt != null) {
       data['stage1_gm_approved_at'] = stage1GmApprovedAt.toIso8601String();
-    if (microQmApprovedBy != null)
+    }
+    if (microQmApprovedBy != null) {
       data['micro_qm_approved_by'] = microQmApprovedBy;
-    if (microQmApprovedAt != null)
+    }
+    if (microQmApprovedAt != null) {
       data['micro_qm_approved_at'] = microQmApprovedAt.toIso8601String();
-    if (microGmApprovedBy != null)
+    }
+    if (microGmApprovedBy != null) {
       data['micro_gm_approved_by'] = microGmApprovedBy;
-    if (microGmApprovedAt != null)
+    }
+    if (microGmApprovedAt != null) {
       data['micro_gm_approved_at'] = microGmApprovedAt.toIso8601String();
-    if (microRejectionReason != null)
+    }
+    if (microRejectionReason != null) {
       data['micro_rejection_reason'] = microRejectionReason;
+    }
     if (microRejectedBy != null) data['micro_rejected_by'] = microRejectedBy;
-    if (microRejectedAt != null)
+    if (microRejectedAt != null) {
       data['micro_rejected_at'] = microRejectedAt.toIso8601String();
-    if (microRejectionAction != null)
+    }
+    if (microRejectionAction != null) {
       data['micro_rejection_action'] = microRejectionAction;
+    }
 
     await _ensureWaterQualityColumns(db);
     final info = await db.rawQuery("PRAGMA table_info('WaterQualityLogs')");
@@ -2781,27 +2795,32 @@ class DatabaseHelper {
     await _ensureHygieneReportTables(db);
     final Map<String, dynamic> data = {'approval_status': approvalStatus};
     if (qmApprovedBy != null) data['qm_approved_by'] = qmApprovedBy;
-    if (qmApprovedAt != null)
+    if (qmApprovedAt != null) {
       data['qm_approved_at'] = qmApprovedAt.toIso8601String();
+    }
     if (gmApprovedBy != null) data['gm_approved_by'] = gmApprovedBy;
-    if (gmApprovedAt != null)
+    if (gmApprovedAt != null) {
       data['gm_approved_at'] = gmApprovedAt.toIso8601String();
+    }
     if (rejectionReason != null) data['rejection_reason'] = rejectionReason;
     if (rejectedBy != null) data['rejected_by'] = rejectedBy;
-    if (rejectionCategory != null)
+    if (rejectionCategory != null) {
       data['rejection_category'] = rejectionCategory;
+    }
     if (severityLevel != null) data['severity_level'] = severityLevel;
     if (rejectionNotes != null) data['rejection_notes'] = rejectionNotes;
     if (affectedProducts != null) data['affected_products'] = affectedProducts;
     if (immediateAction != null) data['immediate_action'] = immediateAction;
     if (correctiveAction != null) data['corrective_action'] = correctiveAction;
     if (correctiveOwner != null) data['corrective_owner'] = correctiveOwner;
-    if (correctiveDueDate != null)
+    if (correctiveDueDate != null) {
       data['corrective_due_date'] = correctiveDueDate.toIso8601String();
+    }
     if (gmDecision != null) data['gm_decision'] = gmDecision;
     if (gmDecisionBy != null) data['gm_decision_by'] = gmDecisionBy;
-    if (gmDecisionAt != null)
+    if (gmDecisionAt != null) {
       data['gm_decision_at'] = gmDecisionAt.toIso8601String();
+    }
     if (gmDecisionNotes != null) data['gm_decision_notes'] = gmDecisionNotes;
 
     final info = await db.rawQuery("PRAGMA table_info('HygieneReports')");
@@ -2891,13 +2910,14 @@ class DatabaseHelper {
     ''',
       [reportId],
     );
-    if (logs.isEmpty)
+    if (logs.isEmpty) {
       return {
         'report': report.first,
         'employees': <Map<String, Object?>>[],
         'criteria': <Map<String, Object?>>[],
         'details': <Map<String, Object?>>[],
       };
+    }
 
     final checklistId = logs.first['checklist_id'] as int;
     final criteria = await db.query(
@@ -3240,31 +3260,38 @@ class DatabaseHelper {
 
     final Map<String, dynamic> data = {'approval_status': approvalStatus};
     if (qmApprovedBy != null) data['qm_approved_by'] = qmApprovedBy;
-    if (qmApprovedAt != null)
+    if (qmApprovedAt != null) {
       data['qm_approved_at'] = qmApprovedAt.toIso8601String();
+    }
     if (gmApprovedBy != null) data['gm_approved_by'] = gmApprovedBy;
-    if (gmApprovedAt != null)
+    if (gmApprovedAt != null) {
       data['gm_approved_at'] = gmApprovedAt.toIso8601String();
-    if (labResponsibleName != null)
+    }
+    if (labResponsibleName != null) {
       data['lab_responsible_name'] = labResponsibleName;
-    if (labResponsibleAt != null)
+    }
+    if (labResponsibleAt != null) {
       data['lab_responsible_at'] = labResponsibleAt.toIso8601String();
+    }
     if (rejectionReason != null) data['rejection_reason'] = rejectionReason;
     if (rejectedBy != null) data['rejected_by'] = rejectedBy;
-    if (rejectionCategory != null)
+    if (rejectionCategory != null) {
       data['rejection_category'] = rejectionCategory;
+    }
     if (severityLevel != null) data['severity_level'] = severityLevel;
     if (rejectionNotes != null) data['rejection_notes'] = rejectionNotes;
     if (affectedProducts != null) data['affected_products'] = affectedProducts;
     if (immediateAction != null) data['immediate_action'] = immediateAction;
     if (correctiveAction != null) data['corrective_action'] = correctiveAction;
     if (correctiveOwner != null) data['corrective_owner'] = correctiveOwner;
-    if (correctiveDueDate != null)
+    if (correctiveDueDate != null) {
       data['corrective_due_date'] = correctiveDueDate.toIso8601String();
+    }
     if (gmDecision != null) data['gm_decision'] = gmDecision;
     if (gmDecisionBy != null) data['gm_decision_by'] = gmDecisionBy;
-    if (gmDecisionAt != null)
+    if (gmDecisionAt != null) {
       data['gm_decision_at'] = gmDecisionAt.toIso8601String();
+    }
     if (gmDecisionNotes != null) data['gm_decision_notes'] = gmDecisionNotes;
 
     await db.update(

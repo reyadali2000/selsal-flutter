@@ -68,7 +68,7 @@ class FinalProductReportDisplayController extends GetxController {
           currentLog.value = WaterQualityLog.fromMap(logData);
           final resultsList = apiLog['results'] ?? apiLog['Results'] ?? logData['results'];
           if (resultsList is List) {
-            results.value = (resultsList as List)
+            results.value = resultsList
                 .map((r) => WaterQualityResult.fromMap(Map<String, dynamic>.from(r)))
                 .toList();
           }

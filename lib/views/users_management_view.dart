@@ -795,7 +795,7 @@ class UsersManagementView extends StatelessWidget {
                           child: Switch(
                             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             value: user.isActive,
-                            activeColor: const Color(0xFF2E7D32),
+                            activeThumbColor: const Color(0xFF2E7D32),
                             onChanged: (_) => controller.toggleUserStatus(user),
                           ),
                         ),
@@ -968,7 +968,7 @@ class UsersManagementView extends StatelessWidget {
 
                       // الدور والصلاحية (يدعم الأدوار المخصصة والنظامية)
                       DropdownButtonFormField<RoleModel>(
-                        value: selectedRoleModel,
+                        initialValue: selectedRoleModel,
                         isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'الدور والصلاحية *',
@@ -1023,7 +1023,7 @@ class UsersManagementView extends StatelessWidget {
 
                       // المصنع / مقر العمل
                       DropdownButtonFormField<int?>(
-                        value: selectedBranchId,
+                        initialValue: selectedBranchId,
                         isExpanded: true,
                         decoration: InputDecoration(
                           labelText: 'المصنع / مقر العمل *',
@@ -1170,7 +1170,7 @@ class UsersManagementView extends StatelessWidget {
                         contentPadding: EdgeInsets.zero,
                         title: const Text('الحساب نشط وجاهز للدخول', style: TextStyle(fontFamily: 'Tajawal', fontSize: 13)),
                         value: isActive,
-                        activeColor: const Color(0xFF2E7D32),
+                        activeThumbColor: const Color(0xFF2E7D32),
                         onChanged: (val) => setState(() => isActive = val),
                       ),
                       const SizedBox(height: 8),

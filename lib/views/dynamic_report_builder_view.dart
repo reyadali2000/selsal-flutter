@@ -139,7 +139,7 @@ class DynamicReportBuilderView extends StatelessWidget {
               )),
             const SizedBox(height: 16),
             Obx(() => DropdownButtonFormField<String>(
-              value: controller.approvalType.value,
+              initialValue: controller.approvalType.value,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'مسار الاعتماد والتوقيعات *',
@@ -506,6 +506,7 @@ class DynamicReportBuilderView extends StatelessWidget {
           return ReorderableListView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
+      // ignore: deprecated_member_use
       onReorder: (oldIndex, newIndex) {
         controller.reorderSection(oldIndex, newIndex);
       },
@@ -571,7 +572,8 @@ class DynamicReportBuilderView extends StatelessWidget {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   buildDefaultDragHandles: false,
-                  onReorder: (oldIndex, newIndex) {
+                  // ignore: deprecated_member_use
+      onReorder: (oldIndex, newIndex) {
                     controller.reorderFields(section.id!, oldIndex, newIndex);
                   },
                   children: sectionFields.map((field) {
@@ -931,7 +933,7 @@ class DynamicReportBuilderView extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Obx(() => DropdownButtonFormField<String>(
-                  value: colTypeCtrl.value,
+                  initialValue: colTypeCtrl.value,
                   isExpanded: true,
                   decoration: const InputDecoration(labelText: 'نوع العمود'),
                   items: const [
@@ -1107,7 +1109,7 @@ class DynamicReportBuilderView extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Obx(() => DropdownButtonFormField<String>(
-                  value: selectedColKey.value,
+                  initialValue: selectedColKey.value,
                   isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: 'العمود المستهدف (مثل بند الفحص)',
@@ -1283,7 +1285,7 @@ class DynamicReportBuilderView extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Obx(() => DropdownButtonFormField<String>(
-                  value: typeCtrl.value,
+                  initialValue: typeCtrl.value,
                   isExpanded: true,
                   decoration: const InputDecoration(labelText: 'نوع الحقل'),
                   items: const [

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,8 +11,8 @@ import '../sync/sync_queue.dart';
 class ApiClient extends GetxService {
   static ApiClient get to => Get.find<ApiClient>();
 
-  static const String _defaultWindowsUrl = 'http://localhost:5000/api';
-  static const String _defaultAndroidUrl = 'http://10.0.2.2:5000/api';
+
+
 
   late String _baseUrl;
   String? _token;

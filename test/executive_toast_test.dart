@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wadialain/models/notification_model.dart';
-import 'package:wadialain/services/notification_service.dart';
-import 'package:get/get.dart';
 
 Widget buildToastCard(AppNotification notif) {
   final Color indicatorColor;
