@@ -1,7 +1,8 @@
-import 'dart:typed_data';
+﻿import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../constants/approval_status.dart';
+import '../models/production_models.dart';
 import '../models/water_quality_models.dart';
 import '../models/standards_models.dart';
 import '../models/rejection_payload.dart';
@@ -35,7 +36,7 @@ class FinalProductReportDisplayController extends GetxController {
   var qmSignatureBytes = Rx<Uint8List?>(null);
   var gmSignatureBytes = Rx<Uint8List?>(null);
   var rejectedSignatureBytes = Rx<Uint8List?>(null);
-  
+
   var microEntererSignatureBytes = Rx<Uint8List?>(null);
   var microQmSignatureBytes = Rx<Uint8List?>(null);
   var microGmSignatureBytes = Rx<Uint8List?>(null);
@@ -60,17 +61,24 @@ class FinalProductReportDisplayController extends GetxController {
       try {
         final apiLog = await WaterQualityApiService.to.getLogById(log.id!);
         if (apiLog != null) {
-          final logData = apiLog['log'] is Map
-              ? Map<String, dynamic>.from(apiLog['log'])
-              : (apiLog['Log'] is Map
-                  ? Map<String, dynamic>.from(apiLog['Log'])
-                  : apiLog);
+          final logData =
+              apiLog['log'] is Map
+                  ? Map<String, dynamic>.from(apiLog['log'])
+                  : (apiLog['Log'] is Map
+                      ? Map<String, dynamic>.from(apiLog['Log'])
+                      : apiLog);
           currentLog.value = WaterQualityLog.fromMap(logData);
-          final resultsList = apiLog['results'] ?? apiLog['Results'] ?? logData['results'];
+          final resultsList =
+              apiLog['results'] ?? apiLog['Results'] ?? logData['results'];
           if (resultsList is List) {
-            results.value = resultsList
-                .map((r) => WaterQualityResult.fromMap(Map<String, dynamic>.from(r)))
-                .toList();
+            results.value =
+                (resultsList)
+                    .map(
+                      (r) => WaterQualityResult.fromMap(
+                        Map<String, dynamic>.from(r),
+                      ),
+                    )
+                    .toList();
           }
         }
       } catch (e) {
@@ -104,14 +112,35 @@ class FinalProductReportDisplayController extends GetxController {
       }
     }
 
-    // 3) المواصفات القياسية للمرجعية
+    // 3) المواصفات القياسية للمرجعية (مصفاة حسب عبوة التقرير)
+    final curLogForProd = currentLog.value ?? log;
+    int? targetProductId;
+    final bottleName = (curLogForProd.bottleSize ?? curLogForProd.productName ?? '').trim();
+
     if (Get.isRegistered<MasterDataApiService>()) {
       try {
-        final apiStds = await MasterDataApiService.to.getQualityStandards(waterType: 'Final Product');
+        if (bottleName.isNotEmpty) {
+          final apiProds = await MasterDataApiService.to.getProducts(
+            branchId: curLogForProd.branchId,
+            includeInactive: true,
+          );
+          final mappedProds = apiProds.map((e) => Product.fromMap(e)).toList();
+          targetProductId = mappedProds.firstWhereOrNull((p) => p.name == bottleName)?.id;
+        }
+        final apiStds = await MasterDataApiService.to.getQualityStandards(
+          productId: targetProductId,
+          waterType: 'Final Product',
+        );
         if (apiStds.isNotEmpty) {
           for (var sMap in apiStds) {
             final std = QualityStandard.fromMap(sMap);
-            standards[std.parameterId] = std;
+            if (std.productId != null && std.productId != targetProductId && targetProductId != null) {
+              continue;
+            }
+            final existing = standards[std.parameterId];
+            if (existing == null || (existing.productId == null && std.productId == targetProductId)) {
+              standards[std.parameterId] = std;
+            }
           }
         }
       } catch (e) {
@@ -119,9 +148,19 @@ class FinalProductReportDisplayController extends GetxController {
       }
     }
     if (standards.isEmpty) {
-      final allStandards = await dbHelper.getQualityStandards(null, 'Final Product');
+      if (targetProductId == null && bottleName.isNotEmpty) {
+        final localProds = await dbHelper.getAllProducts(branchId: curLogForProd.branchId);
+        targetProductId = localProds.firstWhereOrNull((p) => p.name == bottleName)?.id;
+      }
+      final allStandards = await dbHelper.getQualityStandards(
+        targetProductId,
+        'Final Product',
+      );
       for (var std in allStandards) {
-        standards[std.parameterId] = std;
+        final existing = standards[std.parameterId];
+        if (existing == null || (existing.productId == null && std.productId == targetProductId)) {
+          standards[std.parameterId] = std;
+        }
       }
     }
 
@@ -157,8 +196,12 @@ class FinalProductReportDisplayController extends GetxController {
     // 4) اسم الوردية
     if (Get.isRegistered<MasterDataApiService>()) {
       try {
-        final apiShifts = await MasterDataApiService.to.getShifts(branchId: effectiveLog.branchId);
-        final shift = apiShifts.firstWhereOrNull((s) => s['id'] == effectiveLog.shiftId);
+        final apiShifts = await MasterDataApiService.to.getShifts(
+          branchId: effectiveLog.branchId,
+        );
+        final shift = apiShifts.firstWhereOrNull(
+          (s) => s['id'] == effectiveLog.shiftId,
+        );
         if (shift != null) {
           shiftName.value = shift['name'] ?? 'غير معروف';
         }
@@ -168,7 +211,9 @@ class FinalProductReportDisplayController extends GetxController {
     }
     if (shiftName.value.isEmpty) {
       final allShifts = await dbHelper.getShifts();
-      final shift = allShifts.firstWhereOrNull((s) => s.id == effectiveLog.shiftId);
+      final shift = allShifts.firstWhereOrNull(
+        (s) => s.id == effectiveLog.shiftId,
+      );
       if (shift != null) {
         shiftName.value = shift.name;
       } else {
@@ -185,7 +230,10 @@ class FinalProductReportDisplayController extends GetxController {
     try {
       final sigService = UserSignatureService.instance;
       final curLog = currentLog.value ?? log;
-      final inspName = curLog.sampleTaker?.isNotEmpty == true ? curLog.sampleTaker! : 'صلاح الجابري';
+      final inspName =
+          curLog.sampleTaker?.isNotEmpty == true
+              ? curLog.sampleTaker!
+              : 'صلاح الجابري';
       inspectorSignatureBytes.value = await sigService.getSignatureBytesForUser(
         userName: inspName,
         userPosition: 'منفذ الفحص / أخصائي جودة',
@@ -227,10 +275,11 @@ class FinalProductReportDisplayController extends GetxController {
             gmDecisionBy: curLog.gmDecisionBy,
             status: rejStatus,
           );
-          rejectedSignatureBytes.value = await sigService.getSignatureBytesForUser(
-            userName: rejector,
-            userPosition: isGmRejector ? 'مدير المصنع' : 'مدير الجودة',
-          );
+          rejectedSignatureBytes.value = await sigService
+              .getSignatureBytesForUser(
+                userName: rejector,
+                userPosition: isGmRejector ? 'مدير المصنع' : 'مدير الجودة',
+              );
         } else {
           rejectedSignatureBytes.value = null;
         }
@@ -243,10 +292,11 @@ class FinalProductReportDisplayController extends GetxController {
       final microGm = curLog.microGmApprovedBy;
 
       if (microEnterer != null && microEnterer.isNotEmpty) {
-        microEntererSignatureBytes.value = await sigService.getSignatureBytesForUser(
-          userName: microEnterer,
-          userPosition: 'منفذ الفحص / أخصائي جودة',
-        );
+        microEntererSignatureBytes.value = await sigService
+            .getSignatureBytesForUser(
+              userName: microEnterer,
+              userPosition: 'منفذ الفحص / أخصائي جودة',
+            );
       } else {
         microEntererSignatureBytes.value = null;
       }
@@ -277,11 +327,12 @@ class FinalProductReportDisplayController extends GetxController {
         try {
           final apiLog = await WaterQualityApiService.to.getLogById(log.id!);
           if (apiLog != null) {
-            final logData = apiLog['log'] is Map
-                ? Map<String, dynamic>.from(apiLog['log'])
-                : (apiLog['Log'] is Map
-                    ? Map<String, dynamic>.from(apiLog['Log'])
-                    : apiLog);
+            final logData =
+                apiLog['log'] is Map
+                    ? Map<String, dynamic>.from(apiLog['log'])
+                    : (apiLog['Log'] is Map
+                        ? Map<String, dynamic>.from(apiLog['Log'])
+                        : apiLog);
             final freshApi = WaterQualityLog.fromMap(logData);
             log = freshApi;
             currentLog.value = freshApi;
@@ -293,7 +344,9 @@ class FinalProductReportDisplayController extends GetxController {
         }
       }
 
-      final freshLog = await DatabaseHelper.instance.getWaterQualityLogById(log.id!);
+      final freshLog = await DatabaseHelper.instance.getWaterQualityLogById(
+        log.id!,
+      );
       if (freshLog != null) {
         log = freshLog;
         currentLog.value = freshLog;
@@ -305,25 +358,38 @@ class FinalProductReportDisplayController extends GetxController {
   Future<void> approveByQualityManager() async {
     final session = UserSessionService.to;
     if (!session.canApproveQM) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية اعتماد مدير الجودة في حسابك الحالي',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية اعتماد مدير الجودة في حسابك الحالي',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
     if (!session.canApproveBranchData(log.branchId)) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية اعتماد هذا التقرير التابع لمصنع آخر',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية اعتماد هذا التقرير التابع لمصنع آخر',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
     final curLog = currentLog.value ?? log;
     if (!ApprovalStatus.canTransition(curLog.approvalStatus, 'Pending_GM')) {
-      Get.snackbar('تنبيه', 'لا يمكن اعتماد التقرير في حالته الحالية (${ApprovalStatus.label(curLog.approvalStatus)})',
-          backgroundColor: Colors.orange.shade800, colorText: Colors.white);
+      Get.snackbar(
+        'تنبيه',
+        'لا يمكن اعتماد التقرير في حالته الحالية (${ApprovalStatus.label(curLog.approvalStatus)})',
+        backgroundColor: Colors.orange.shade800,
+        colorText: Colors.white,
+      );
       return;
     }
 
-    final qmName = session.currentUserName.value.isNotEmpty
-        ? session.currentUserName.value
-        : 'حمود يسر';
+    final qmName =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : 'حمود يسر';
 
     try {
       final qmFull = '$qmName (مدير الجودة)';
@@ -353,7 +419,8 @@ class FinalProductReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         NotificationService.to.sendNotification(
           title: 'تقرير فحص منتج نهائي بانتظار الاعتماد النهائي',
-          body: 'قام مدير الجودة ($qmName) باعتماد فحص المنتج النهائي (${log.batchNumber}) وهو بانتظار اعتماد مدير المصنع.',
+          body:
+              'قام مدير الجودة ($qmName) باعتماد فحص المنتج النهائي (${log.batchNumber}) وهو بانتظار اعتماد مدير المصنع.',
           reportId: log.id,
           reportCategory: 'Final Product',
           targetRole: 'FactoryManager',
@@ -361,7 +428,8 @@ class FinalProductReportDisplayController extends GetxController {
         );
         NotificationService.to.sendNotification(
           title: 'تم اعتماد تقرير فحص المنتج النهائي من مدير الجودة ✓',
-          body: 'قام مدير الجودة ($qmName) باعتماد فحص المنتج النهائي (${log.batchNumber}) وتم تحويله لمدير المصنع للاعتماد النهائي.',
+          body:
+              'قام مدير الجودة ($qmName) باعتماد فحص المنتج النهائي (${log.batchNumber}) وتم تحويله لمدير المصنع للاعتماد النهائي.',
           reportId: log.id,
           reportCategory: 'Final Product',
           targetRole: 'QualitySpecialist',
@@ -377,40 +445,59 @@ class FinalProductReportDisplayController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل تحديث حالة الاعتماد: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل تحديث حالة الاعتماد: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
   Future<void> approveByFactoryManager() async {
     final session = UserSessionService.to;
     if (!session.canApproveGM) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية اعتماد مدير المصنع في حسابك الحالي',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية اعتماد مدير المصنع في حسابك الحالي',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
     if (!session.canApproveBranchData(log.branchId)) {
-      Get.snackbar('غير مصرح', 'لا يمكنك اعتماد هذا التقرير لأنه يتبع لمصنع آخر',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا يمكنك اعتماد هذا التقرير لأنه يتبع لمصنع آخر',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
     final curCheck = currentLog.value ?? log;
-    final expectedNext = curCheck.microResultsPending ? 'Awaiting_Micro_Results' : 'Approved';
+    final expectedNext =
+        curCheck.microResultsPending ? 'Awaiting_Micro_Results' : 'Approved';
     if (!ApprovalStatus.canTransition(curCheck.approvalStatus, expectedNext)) {
-      Get.snackbar('تنبيه', 'لا يمكن اعتماد التقرير في حالته الحالية (${ApprovalStatus.label(curCheck.approvalStatus)})',
-          backgroundColor: Colors.orange.shade800, colorText: Colors.white);
+      Get.snackbar(
+        'تنبيه',
+        'لا يمكن اعتماد التقرير في حالته الحالية (${ApprovalStatus.label(curCheck.approvalStatus)})',
+        backgroundColor: Colors.orange.shade800,
+        colorText: Colors.white,
+      );
       return;
     }
 
-    final gmName = session.currentUserName.value.isNotEmpty
-        ? session.currentUserName.value
-        : 'مدير المصنع';
+    final gmName =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : 'مدير المصنع';
 
     try {
       final curLog = currentLog.value ?? log;
       final gmFull = '$gmName (مدير المصنع)';
       final now = DateTime.now();
-      final targetStatus = curLog.microResultsPending ? 'Awaiting_Micro_Results' : 'Approved';
+      final targetStatus =
+          curLog.microResultsPending ? 'Awaiting_Micro_Results' : 'Approved';
 
       if (Get.isRegistered<WaterQualityApiService>()) {
         try {
@@ -443,7 +530,8 @@ class FinalProductReportDisplayController extends GetxController {
         if (Get.isRegistered<NotificationService>()) {
           NotificationService.to.sendNotification(
             title: 'اعتماد مبدئي لتقرير فحص المنتج النهائي',
-            body: 'اعتمد مدير المصنع ($gmName) التقرير (${log.batchNumber}) مبدئياً. بانتظار إدخال نتائج الفحص الميكروبيولوجي للاعتماد النهائي.',
+            body:
+                'اعتمد مدير المصنع ($gmName) التقرير (${log.batchNumber}) مبدئياً. بانتظار إدخال نتائج الفحص الميكروبيولوجي للاعتماد النهائي.',
             reportId: log.id,
             reportCategory: 'Final Product',
             targetRole: 'QualitySpecialist',
@@ -473,7 +561,8 @@ class FinalProductReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         NotificationService.to.sendNotification(
           title: 'تم الاعتماد النهائي لتقرير فحص المنتج النهائي',
-          body: 'قام مدير المصنع ($gmName) بالاعتماد النهائي للتقرير (${log.batchNumber}).',
+          body:
+              'قام مدير المصنع ($gmName) بالاعتماد النهائي للتقرير (${log.batchNumber}).',
           reportId: log.id,
           reportCategory: 'Final Product',
           targetRole: 'QualitySpecialist',
@@ -489,36 +578,54 @@ class FinalProductReportDisplayController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل تحديث حالة الاعتماد: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل تحديث حالة الاعتماد: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
   /// إدخال نتائج الفحص الميكروبيولوجي (المرحلة الثانية) بعد الاعتماد المبدئي أو إعادة السحب
-  Future<void> submitMicrobiologicalResults(List<WaterQualityResult> microResults) async {
+  Future<void> submitMicrobiologicalResults(
+    List<WaterQualityResult> microResults,
+  ) async {
     final curLog = currentLog.value ?? log;
     final st = curLog.approvalStatus;
-    final canEnterMicro = st == 'Awaiting_Micro_Results' ||
+    final canEnterMicro =
+        st == 'Awaiting_Micro_Results' ||
         st == 'Micro_Resample_Pending' ||
         st == 'Micro_Rejected' ||
         st == 'Micro_Corrective_In_Progress' ||
         (st == 'Closed' && curLog.microResultsPending);
     if (!canEnterMicro) {
-      Get.snackbar('تنبيه', 'لا يمكن إدخال النتائج الميكروبيولوجية في الحالة الحالية للتقرير',
-          backgroundColor: Colors.orange.shade800, colorText: Colors.white);
+      Get.snackbar(
+        'تنبيه',
+        'لا يمكن إدخال النتائج الميكروبيولوجية في الحالة الحالية للتقرير',
+        backgroundColor: Colors.orange.shade800,
+        colorText: Colors.white,
+      );
       return;
     }
 
     final session = UserSessionService.to;
-    if (!session.canEditReports && !session.canCreateWaterReports && !session.isAdmin) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية إدخال نتائج الفحص الميكروبيولوجي',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+    if (!session.canEditReports &&
+        !session.canCreateWaterReports &&
+        !session.isAdmin) {
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية إدخال نتائج الفحص الميكروبيولوجي',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
-    final enteredBy = session.currentUserName.value.isNotEmpty
-        ? session.currentUserName.value
-        : (curLog.sampleTaker ?? 'أخصائي الجودة');
+    final enteredBy =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : (curLog.sampleTaker ?? 'أخصائي الجودة');
 
     try {
       if (Get.isRegistered<WaterQualityApiService>()) {
@@ -538,7 +645,10 @@ class FinalProductReportDisplayController extends GetxController {
         }
       }
 
-      await DatabaseHelper.instance.saveMicrobiologicalResults(curLog.id!, microResults);
+      await DatabaseHelper.instance.saveMicrobiologicalResults(
+        curLog.id!,
+        microResults,
+      );
 
       await DatabaseHelper.instance.updateWaterQualityLogApproval(
         logId: curLog.id!,
@@ -553,7 +663,8 @@ class FinalProductReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         NotificationService.to.sendNotification(
           title: 'نتائج الفحص الميكروبيولوجي بانتظار الاعتماد',
-          body: 'أدخل $enteredBy نتائج الفحص الميكروبيولوجي للتقرير (${curLog.batchNumber}) وهو بانتظار اعتماد مدير الجودة.',
+          body:
+              'أدخل $enteredBy نتائج الفحص الميكروبيولوجي للتقرير (${curLog.batchNumber}) وهو بانتظار اعتماد مدير الجودة.',
           reportId: curLog.id,
           reportCategory: 'Final Product',
           targetRole: 'QualityManager',
@@ -569,8 +680,12 @@ class FinalProductReportDisplayController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل حفظ نتائج الفحص الميكروبيولوجي: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل حفظ نتائج الفحص الميكروبيولوجي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
@@ -578,14 +693,19 @@ class FinalProductReportDisplayController extends GetxController {
   Future<void> approveMicroByQualityManager() async {
     final session = UserSessionService.to;
     if (!session.canApproveQM || !session.canApproveBranchData(log.branchId)) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية اعتماد نتائج الفحص الميكروبيولوجي',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية اعتماد نتائج الفحص الميكروبيولوجي',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
-    final qmName = session.currentUserName.value.isNotEmpty
-        ? session.currentUserName.value
-        : 'حمود يسر';
+    final qmName =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : 'حمود يسر';
 
     try {
       final qmFull = '$qmName (مدير الجودة)';
@@ -599,7 +719,9 @@ class FinalProductReportDisplayController extends GetxController {
             approvedBy: qmFull,
           );
         } catch (e) {
-          debugPrint('API final product approveMicroByQualityManager error: $e');
+          debugPrint(
+            'API final product approveMicroByQualityManager error: $e',
+          );
         }
       }
 
@@ -615,7 +737,8 @@ class FinalProductReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         NotificationService.to.sendNotification(
           title: 'نتائج الفحص الميكروبيولوجي بانتظار الاعتماد النهائي',
-          body: 'اعتمد مدير الجودة ($qmName) نتائج الفحص الميكروبيولوجي للتقرير (${log.batchNumber}) وبانتظار اعتماد مدير المصنع.',
+          body:
+              'اعتمد مدير الجودة ($qmName) نتائج الفحص الميكروبيولوجي للتقرير (${log.batchNumber}) وبانتظار اعتماد مدير المصنع.',
           reportId: log.id,
           reportCategory: 'Final Product',
           targetRole: 'FactoryManager',
@@ -623,7 +746,8 @@ class FinalProductReportDisplayController extends GetxController {
         );
         NotificationService.to.sendNotification(
           title: 'تم اعتماد نتائج الفحص الميكروبيولوجي من مدير الجودة ✓',
-          body: 'اعتمد مدير الجودة ($qmName) نتائج الفحص الميكروبيولوجي للتقرير (${log.batchNumber}) وتم تحويلها للاعتماد النهائي.',
+          body:
+              'اعتمد مدير الجودة ($qmName) نتائج الفحص الميكروبيولوجي للتقرير (${log.batchNumber}) وتم تحويلها للاعتماد النهائي.',
           reportId: log.id,
           reportCategory: 'Final Product',
           targetRole: 'QualitySpecialist',
@@ -639,8 +763,12 @@ class FinalProductReportDisplayController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل تحديث حالة الاعتماد: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل تحديث حالة الاعتماد: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
@@ -648,14 +776,19 @@ class FinalProductReportDisplayController extends GetxController {
   Future<void> approveMicroByFactoryManager() async {
     final session = UserSessionService.to;
     if (!session.canApproveGM || !session.canApproveBranchData(log.branchId)) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية الاعتماد النهائي على نتائج الفحص الميكروبيولوجي',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية الاعتماد النهائي على نتائج الفحص الميكروبيولوجي',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
-    final gmName = session.currentUserName.value.isNotEmpty
-        ? session.currentUserName.value
-        : 'مدير المصنع';
+    final gmName =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : 'مدير المصنع';
 
     try {
       final gmFull = '$gmName (مدير المصنع)';
@@ -669,7 +802,9 @@ class FinalProductReportDisplayController extends GetxController {
             approvedBy: gmFull,
           );
         } catch (e) {
-          debugPrint('API final product approveMicroByFactoryManager error: $e');
+          debugPrint(
+            'API final product approveMicroByFactoryManager error: $e',
+          );
         }
       }
 
@@ -687,7 +822,8 @@ class FinalProductReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         NotificationService.to.sendNotification(
           title: 'تم الاعتماد النهائي لنتائج الفحص الميكروبيولوجي',
-          body: 'قام مدير المصنع ($gmName) بالاعتماد النهائي لنتائج الفحص الميكروبيولوجي للتقرير (${log.batchNumber}).',
+          body:
+              'قام مدير المصنع ($gmName) بالاعتماد النهائي لنتائج الفحص الميكروبيولوجي للتقرير (${log.batchNumber}).',
           reportId: log.id,
           reportCategory: 'Final Product',
           targetRole: 'QualitySpecialist',
@@ -703,8 +839,12 @@ class FinalProductReportDisplayController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل تحديث حالة الاعتماد: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل تحديث حالة الاعتماد: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
@@ -718,30 +858,44 @@ class FinalProductReportDisplayController extends GetxController {
     String? notes,
   }) async {
     if (reason.trim().isEmpty) {
-      Get.snackbar('تنبيه', 'يرجى كتابة سبب رفض نتائج الفحص الميكروبيولوجي',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'تنبيه',
+        'يرجى كتابة سبب رفض نتائج الفحص الميكروبيولوجي',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
     final session = UserSessionService.to;
     if (!session.canRejectReports) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية رفض التقارير في حسابك الحالي',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية رفض التقارير في حسابك الحالي',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
     if (!session.canApproveBranchData(log.branchId)) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية رفض هذا التقرير التابع لمصنع آخر',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية رفض هذا التقرير التابع لمصنع آخر',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
-    final rejectorName = '${session.currentUserName.value} (${session.roleTitle})';
+    final rejectorName =
+        '${session.currentUserName.value} (${session.roleTitle})';
     final isResample = actionType == 'resample';
-    final newStatus = isResample
-        ? ApprovalStatus.microResamplePending
-        : ((correctiveAction != null && correctiveAction.isNotEmpty)
-            ? ApprovalStatus.microCorrectiveInProgress
-            : ApprovalStatus.microRejected);
+    final newStatus =
+        isResample
+            ? ApprovalStatus.microResamplePending
+            : ((correctiveAction != null && correctiveAction.isNotEmpty)
+                ? ApprovalStatus.microCorrectiveInProgress
+                : ApprovalStatus.microRejected);
 
     try {
       if (Get.isRegistered<WaterQualityApiService>()) {
@@ -781,12 +935,14 @@ class FinalProductReportDisplayController extends GetxController {
 
       if (Get.isRegistered<NotificationService>()) {
         NotificationService.to.sendNotification(
-          title: isResample
-              ? 'مطلوب إعادة سحب عينة ميكروبيولوجية'
-              : 'تم رفض نتائج الفحص الميكروبيولوجي',
-          body: isResample
-              ? 'طلب $rejectorName إعادة سحب عينة ميكروبيولوجية جديدة للتشغيلة (${log.batchNumber}): $reason'
-              : 'رفض $rejectorName نتائج الفحص الميكروبيولوجي للتشغيلة (${log.batchNumber}): $reason',
+          title:
+              isResample
+                  ? 'مطلوب إعادة سحب عينة ميكروبيولوجية'
+                  : 'تم رفض نتائج الفحص الميكروبيولوجي',
+          body:
+              isResample
+                  ? 'طلب $rejectorName إعادة سحب عينة ميكروبيولوجية جديدة للتشغيلة (${log.batchNumber}): $reason'
+                  : 'رفض $rejectorName نتائج الفحص الميكروبيولوجي للتشغيلة (${log.batchNumber}): $reason',
           reportId: log.id,
           reportCategory: 'Final Product',
           targetRole: 'QualitySpecialist',
@@ -795,40 +951,62 @@ class FinalProductReportDisplayController extends GetxController {
       }
 
       Get.snackbar(
-        isResample ? 'تم طلب إعادة سحب عينة' : 'تم رفض نتائج الفحص الميكروبيولوجي',
+        isResample
+            ? 'تم طلب إعادة سحب عينة'
+            : 'تم رفض نتائج الفحص الميكروبيولوجي',
         isResample
             ? 'تم حفظ طلب إعادة السحب وإبقاء الفحص الفيزيوكيميائي الأولي معتمداً وسارياً.'
             : 'تم رفض نتائج الفحص الميكروبيولوجي مع الحفاظ على اعتماد الفحص الفيزيوكيميائي الأولي.',
-        backgroundColor: isResample ? const Color(0xFF00838F) : Colors.red.shade700,
+        backgroundColor:
+            isResample ? const Color(0xFF00838F) : Colors.red.shade700,
         colorText: Colors.white,
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل رفض نتائج الميكروبيولوجي: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل رفض نتائج الميكروبيولوجي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
   Future<void> rejectReport(RejectionPayload payload) async {
     if (!payload.isValid) {
-      Get.snackbar('تنبيه', 'يرجى كتابة سبب الرفض', backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'تنبيه',
+        'يرجى كتابة سبب الرفض',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
     final session = UserSessionService.to;
     if (!session.canRejectReports) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية رفض التقارير في حسابك الحالي',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية رفض التقارير في حسابك الحالي',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
     if (!session.canApproveBranchData(log.branchId)) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية رفض هذا التقرير التابع لمصنع آخر',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية رفض هذا التقرير التابع لمصنع آخر',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
-    final rejectorName = '${session.currentUserName.value} (${session.roleTitle})';
-    final newStatus = payload.hasCorrectiveAction ? 'Corrective_In_Progress' : 'Rejected';
+    final rejectorName =
+        '${session.currentUserName.value} (${session.roleTitle})';
+    final newStatus =
+        payload.hasCorrectiveAction ? 'Corrective_In_Progress' : 'Rejected';
 
     try {
       if (Get.isRegistered<WaterQualityApiService>()) {
@@ -872,7 +1050,8 @@ class FinalProductReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         NotificationService.to.sendNotification(
           title: 'تم رفض تقرير فحص المنتج النهائي',
-          body: 'تم رفض تقرير التشغيلة (${log.batchNumber}) بواسطة $rejectorName: ${payload.reason}'
+          body:
+              'تم رفض تقرير التشغيلة (${log.batchNumber}) بواسطة $rejectorName: ${payload.reason}'
               '${payload.hasCorrectiveAction ? "\nالإجراء التصحيحي: ${payload.correctiveAction}" : ""}',
           reportId: log.id,
           reportCategory: 'Final Product',
@@ -883,7 +1062,8 @@ class FinalProductReportDisplayController extends GetxController {
         if (payload.hasCorrectiveAction) {
           NotificationService.to.sendNotification(
             title: 'إجراء تصحيحي جديد مطلوب تنفيذه',
-            body: 'تم رفض تقرير المنتج النهائي (${log.batchNumber}) وتعيين إجراء تصحيحي: ${payload.correctiveAction}'
+            body:
+                'تم رفض تقرير المنتج النهائي (${log.batchNumber}) وتعيين إجراء تصحيحي: ${payload.correctiveAction}'
                 ' — المسؤول: ${payload.correctiveOwner}، يرجى التنفيذ والتوثيق.',
             reportId: log.id,
             reportCategory: 'Final Product',
@@ -894,7 +1074,9 @@ class FinalProductReportDisplayController extends GetxController {
       }
 
       Get.snackbar(
-        payload.hasCorrectiveAction ? 'تم الرفض وتعيين إجراء تصحيحي' : 'تم الرفض',
+        payload.hasCorrectiveAction
+            ? 'تم الرفض وتعيين إجراء تصحيحي'
+            : 'تم الرفض',
         payload.hasCorrectiveAction
             ? 'تم رفض التقرير مع تعيين إجراء تصحيحي للمسؤول المختص'
             : 'تم رفض التقرير وإعادته لأخصائي الجودة مع ملاحظات الرفض',
@@ -903,8 +1085,12 @@ class FinalProductReportDisplayController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل رفض التقرير: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل رفض التقرير: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
@@ -912,12 +1098,19 @@ class FinalProductReportDisplayController extends GetxController {
   Future<void> qmApproveCorrectiveAction(String notes) async {
     final session = UserSessionService.to;
     if (!session.canApproveQM || !session.canApproveBranchData(log.branchId)) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية مدير الجودة لاعتماد الإجراء التصحيحي على هذا التقرير',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية مدير الجودة لاعتماد الإجراء التصحيحي على هذا التقرير',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
-    final qmName = session.currentUserName.value.isNotEmpty ? session.currentUserName.value : 'مدير الجودة';
+    final qmName =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : 'مدير الجودة';
     final qmFull = '$qmName (مدير الجودة)';
     final now = DateTime.now();
 
@@ -948,7 +1141,8 @@ class FinalProductReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         NotificationService.to.sendNotification(
           title: 'إجراء تصحيحي معتمد من الجودة وبانتظار قرار مدير المصنع',
-          body: 'اعتمد $qmFull الإجراء التصحيحي لتقرير المنتج النهائي (${log.batchNumber}) وتم رفعه لمدير المصنع للقرار النهائي.',
+          body:
+              'اعتمد $qmFull الإجراء التصحيحي لتقرير المنتج النهائي (${log.batchNumber}) وتم رفعه لمدير المصنع للقرار النهائي.',
           reportId: log.id,
           reportCategory: 'Final Product',
           targetRole: 'FactoryManager',
@@ -964,8 +1158,12 @@ class FinalProductReportDisplayController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل اعتماد الإجراء التصحيحي: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل اعتماد الإجراء التصحيحي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
@@ -973,12 +1171,19 @@ class FinalProductReportDisplayController extends GetxController {
   Future<void> qmRejectCorrectiveAction(String notes) async {
     final session = UserSessionService.to;
     if (!session.canApproveQM || !session.canApproveBranchData(log.branchId)) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية مدير الجودة لرفض الإجراء التصحيحي على هذا التقرير',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية مدير الجودة لرفض الإجراء التصحيحي على هذا التقرير',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
-    final qmName = session.currentUserName.value.isNotEmpty ? session.currentUserName.value : 'مدير الجودة';
+    final qmName =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : 'مدير الجودة';
     final qmFull = '$qmName (مدير الجودة)';
 
     try {
@@ -1012,7 +1217,8 @@ class FinalProductReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         NotificationService.to.sendNotification(
           title: 'مدير الجودة يرفض الإجراء التصحيحي للتعديل',
-          body: 'رفض $qmFull الإجراء التصحيحي لتقرير المنتج النهائي (${log.batchNumber}) وطلب تعديله: $notes',
+          body:
+              'رفض $qmFull الإجراء التصحيحي لتقرير المنتج النهائي (${log.batchNumber}) وطلب تعديله: $notes',
           reportId: log.id,
           reportCategory: 'Final Product',
           targetRole: 'QualitySpecialist',
@@ -1028,8 +1234,12 @@ class FinalProductReportDisplayController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل رفض الإجراء التصحيحي: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل رفض الإجراء التصحيحي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
@@ -1037,17 +1247,25 @@ class FinalProductReportDisplayController extends GetxController {
   Future<void> gmApproveCorrectiveAction(String notes) async {
     final session = UserSessionService.to;
     if (!session.canApproveGM || !session.canApproveBranchData(log.branchId)) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية اعتماد الإجراء التصحيحي على هذا التقرير',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية اعتماد الإجراء التصحيحي على هذا التقرير',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
-    final gmName = session.currentUserName.value.isNotEmpty ? session.currentUserName.value : 'مدير المصنع';
+    final gmName =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : 'مدير المصنع';
     final gmFull = '$gmName (مدير المصنع)';
 
     final curLog = currentLog.value ?? log;
     final bool hasPendingMicro = curLog.microResultsPending;
-    final String targetStatus = hasPendingMicro ? 'Awaiting_Micro_Results' : 'Closed';
+    final String targetStatus =
+        hasPendingMicro ? 'Awaiting_Micro_Results' : 'Closed';
     final now = DateTime.now();
 
     try {
@@ -1083,12 +1301,14 @@ class FinalProductReportDisplayController extends GetxController {
 
       if (Get.isRegistered<NotificationService>()) {
         NotificationService.to.sendNotification(
-          title: hasPendingMicro
-              ? 'اعتماد الإجراء التصحيحي — بانتظار نتائج الميكروبيولوجي'
-              : 'اعتماد الإجراء التصحيحي وإغلاق التقرير',
-          body: hasPendingMicro
-              ? 'اعتمد $gmFull الإجراء التصحيحي للتقرير (${log.batchNumber}). التقرير الآن بانتظار إدخال نتائج الفحص الميكروبيولوجي للاعتماد النهائي.'
-              : 'اعتمد $gmFull الإجراء التصحيحي لتقرير المنتج النهائي (${log.batchNumber}) وتم إغلاقه نهائياً.',
+          title:
+              hasPendingMicro
+                  ? 'اعتماد الإجراء التصحيحي — بانتظار نتائج الميكروبيولوجي'
+                  : 'اعتماد الإجراء التصحيحي وإغلاق التقرير',
+          body:
+              hasPendingMicro
+                  ? 'اعتمد $gmFull الإجراء التصحيحي للتقرير (${log.batchNumber}). التقرير الآن بانتظار إدخال نتائج الفحص الميكروبيولوجي للاعتماد النهائي.'
+                  : 'اعتمد $gmFull الإجراء التصحيحي لتقرير المنتج النهائي (${log.batchNumber}) وتم إغلاقه نهائياً.',
           reportId: log.id,
           reportCategory: 'Final Product',
           targetRole: hasPendingMicro ? 'QualitySpecialist' : 'All',
@@ -1106,8 +1326,12 @@ class FinalProductReportDisplayController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل اعتماد الإجراء التصحيحي: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل اعتماد الإجراء التصحيحي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
@@ -1115,12 +1339,19 @@ class FinalProductReportDisplayController extends GetxController {
   Future<void> gmRejectCorrectiveAction(String notes) async {
     final session = UserSessionService.to;
     if (!session.canApproveGM || !session.canApproveBranchData(log.branchId)) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية رفض الإجراء التصحيحي على هذا التقرير',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية رفض الإجراء التصحيحي على هذا التقرير',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
-    final gmName = session.currentUserName.value.isNotEmpty ? session.currentUserName.value : 'مدير المصنع';
+    final gmName =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : 'مدير المصنع';
     final gmFull = '$gmName (مدير المصنع)';
 
     try {
@@ -1154,7 +1385,8 @@ class FinalProductReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         NotificationService.to.sendNotification(
           title: 'رفض قطعي للإجراء التصحيحي وإغلاق التقرير',
-          body: 'رفض $gmFull الإجراء التصحيحي لتقرير المنتج النهائي (${log.batchNumber}) وتم إغلاقه بالرفض النهائي. السبب: $notes',
+          body:
+              'رفض $gmFull الإجراء التصحيحي لتقرير المنتج النهائي (${log.batchNumber}) وتم إغلاقه بالرفض النهائي. السبب: $notes',
           reportId: log.id,
           reportCategory: 'Final Product',
           targetRole: 'All',
@@ -1170,22 +1402,39 @@ class FinalProductReportDisplayController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل رفض الإجراء التصحيحي: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل رفض الإجراء التصحيحي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
   /// رفع الإجراء التصحيحي المنفَّذ إلى مدير الجودة للمراجعة والاعتماد
   Future<void> submitCorrectiveAction([String? notes]) async {
     final session = UserSessionService.to;
-    if (!session.canEditReports && !session.canCreateWaterReports && !session.canRejectReports && !session.isAdmin) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية رفع الإجراء التصحيحي',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+    if (!session.canEditReports &&
+        !session.canCreateWaterReports &&
+        !session.canRejectReports &&
+        !session.isAdmin) {
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية رفع الإجراء التصحيحي',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
-    final submitterName = session.currentUserName.value.isNotEmpty ? session.currentUserName.value : session.roleTitle;
-    final effectiveAction = (notes != null && notes.trim().isNotEmpty) ? notes.trim() : (log.correctiveAction ?? 'تم إنجاز الإجراء التصحيحي');
+    final submitterName =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : session.roleTitle;
+    final effectiveAction =
+        (notes != null && notes.trim().isNotEmpty)
+            ? notes.trim()
+            : (log.correctiveAction ?? 'تم إنجاز الإجراء التصحيحي');
 
     try {
       if (Get.isRegistered<WaterQualityApiService>()) {
@@ -1212,7 +1461,8 @@ class FinalProductReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         NotificationService.to.sendNotification(
           title: 'إجراء تصحيحي بانتظار اعتماد مدير الجودة',
-          body: 'قام $submitterName بتوثيق ورفع الإجراء التصحيحي لتقرير المنتج النهائي (${log.batchNumber}) وهو بانتظار مراجعتك واعتمادك.',
+          body:
+              'قام $submitterName بتوثيق ورفع الإجراء التصحيحي لتقرير المنتج النهائي (${log.batchNumber}) وهو بانتظار مراجعتك واعتمادك.',
           reportId: log.id,
           reportCategory: 'Final Product',
           targetRole: 'QualityManager',
@@ -1228,8 +1478,12 @@ class FinalProductReportDisplayController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل رفع الإجراء التصحيحي: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل رفع الإجراء التصحيحي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
@@ -1239,8 +1493,9 @@ class FinalProductReportDisplayController extends GetxController {
       log: curLog,
       results: results,
       parameters: parameters,
+      standards: standards,
       shiftName: shiftName.value,
-      productName: curLog.productName ?? 'مياه شرب معبأة سلسال',
+      productName: curLog.productName ?? 'مصنع سلسال للمياة المعبأة (وادي العين)',
       inspectorSignatureBytes: inspectorSignatureBytes.value,
       qmSignatureBytes: qmSignatureBytes.value,
       gmSignatureBytes: gmSignatureBytes.value,
@@ -1248,5 +1503,25 @@ class FinalProductReportDisplayController extends GetxController {
       microQmSignatureBytes: microQmSignatureBytes.value,
       microGmSignatureBytes: microGmSignatureBytes.value,
     );
+  }
+
+  String getStandardString(int parameterId) {
+    final std = standards[parameterId];
+    if (std == null) return '';
+    final unit = parameters[parameterId]?.unit ?? '';
+    final unitSuffix = unit.isNotEmpty ? ' $unit' : '';
+    if (std.expectedText != null && std.expectedText!.isNotEmpty) {
+      return std.expectedText!;
+    }
+    if (std.minValue != null && std.maxValue != null) {
+      return '${std.minValue} - ${std.maxValue}$unitSuffix';
+    }
+    if (std.maxValue != null) {
+      return '< ${std.maxValue}$unitSuffix';
+    }
+    if (std.minValue != null) {
+      return '> ${std.minValue}$unitSuffix';
+    }
+    return '';
   }
 }

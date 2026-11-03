@@ -129,7 +129,7 @@ class UIEmptyState extends StatelessWidget {
             ),
             if (hasMessage) const SizedBox(height: 16),
           ],
-          if (messageWidget != null) messageWidget,
+          if (messageWidget != null) messageWidget!,
           if (child != null) ...[const SizedBox(height: 12), child!],
         ],
       ),

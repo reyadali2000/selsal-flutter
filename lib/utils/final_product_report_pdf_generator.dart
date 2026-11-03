@@ -1,4 +1,4 @@
-import 'package:flutter/services.dart';
+﻿import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -19,6 +19,7 @@ class FinalProductReportPdfGenerator {
     required WaterQualityLog log,
     required List<WaterQualityResult> results,
     required Map<int, TestParameter> parameters,
+    Map<int, QualityStandard>? standards,
     required String shiftName,
     required String productName,
     Uint8List? inspectorSignatureBytes,
@@ -130,11 +131,11 @@ class FinalProductReportPdfGenerator {
             pw.SizedBox(height: 12),
             _buildSectionLabel('ثانياً: الفحص الظاهري:', ttfBold),
             pw.SizedBox(height: 4),
-            _buildResultsTable(visual, parameters, ttf, ttfBold),
+            _buildResultsTable(visual, parameters, standards, ttf, ttfBold),
             pw.SizedBox(height: 12),
             _buildSectionLabel('ثالثاً: الفحوصات الفيزيائية والكيميائية:', ttfBold),
             pw.SizedBox(height: 4),
-            _buildResultsTable(physio, parameters, ttf, ttfBold),
+            _buildResultsTable(physio, parameters, standards, ttf, ttfBold),
             pw.SizedBox(height: 12),
             pw.Container(
               padding: pw.EdgeInsets.all(10),
@@ -150,7 +151,7 @@ class FinalProductReportPdfGenerator {
                   pw.SizedBox(height: 4),
                   micro.isEmpty
                       ? _buildPendingMicroNotice(log, ttf, ttfBold)
-                      : _buildResultsTable(micro, parameters, ttf, ttfBold),
+                      : _buildResultsTable(micro, parameters, standards, ttf, ttfBold),
                   if (micro.isNotEmpty || log.approvalStatus == 'Awaiting_Micro_Results' || log.approvalStatus == 'Pending_Micro_QM' || log.approvalStatus == 'Pending_Micro_GM') ...[
                     pw.SizedBox(height: 10),
                     _buildSignaturesTable(
@@ -315,7 +316,7 @@ class FinalProductReportPdfGenerator {
             1: const pw.FlexColumnWidth(1.5),
           },
           children: [
-            _buildTableRow2Col('اسم المنتج', log.productName ?? 'مياه شرب معبأة سلسال', ttf, ttfBold),
+            _buildTableRow2Col('اسم المنتج', log.productName ?? 'مصنع سلسال للمياة المعبأة (وادي العين)', ttf, ttfBold),
             _buildTableRow2Col('حجم العبوة', log.bottleSize ?? '330 مل', ttf, ttfBold),
             _buildTableRow2Col('رقم التشغيلة', log.batchNumber ?? '-', ttf, ttfBold),
             _buildTableRow2Col('تاريخ الإنتاج', log.productionDate ?? dateStr, ttf, ttfBold),
@@ -369,6 +370,7 @@ class FinalProductReportPdfGenerator {
   static pw.Widget _buildResultsTable(
     List<WaterQualityResult> resultsList,
     Map<int, TestParameter> parameters,
+    Map<int, QualityStandard>? standards,
     pw.Font ttf,
     pw.Font ttfBold,
   ) {
@@ -398,7 +400,10 @@ class FinalProductReportPdfGenerator {
               ? '${r.numericResult}$unit'
               : (r.textResult ?? '-');
 
-          String standardLimit = _getStandardLimitText(paramName);
+          String standardLimit = _formatStandard(standards?[r.parameterId], param?.unit);
+          if (standardLimit.isEmpty) {
+            standardLimit = _getStandardLimitText(paramName);
+          }
 
           final isRowRed = !r.isCompliant;
 
@@ -414,6 +419,24 @@ class FinalProductReportPdfGenerator {
         }),
       ],
     );
+  }
+
+  static String _formatStandard(QualityStandard? std, String? unit) {
+    if (std == null) return '';
+    final unitSuffix = (unit != null && unit.isNotEmpty) ? ' $unit' : '';
+    if (std.expectedText != null && std.expectedText!.isNotEmpty) {
+      return std.expectedText!;
+    }
+    if (std.minValue != null && std.maxValue != null) {
+      return '${std.minValue} - ${std.maxValue}$unitSuffix';
+    }
+    if (std.maxValue != null) {
+      return '< ${std.maxValue}$unitSuffix';
+    }
+    if (std.minValue != null) {
+      return '> ${std.minValue}$unitSuffix';
+    }
+    return '';
   }
 
   static String _getStandardLimitText(String paramName) {

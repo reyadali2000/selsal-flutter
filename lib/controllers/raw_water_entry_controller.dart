@@ -154,7 +154,7 @@ class RawWaterEntryController extends GetxController {
         if (apiStandards.isNotEmpty) {
           final mappedStandards = apiStandards.map((e) => QualityStandard.fromMap(e)).toList();
           standards.value = mappedStandards;
-          dbHelper.syncQualityStandards(mappedStandards).catchError((_) {});
+          dbHelper.syncQualityStandards(mappedStandards, waterType: 'Raw Water').catchError((_) {});
         }
       } catch (e) {
         debugPrint('API load raw water reference data error: $e');

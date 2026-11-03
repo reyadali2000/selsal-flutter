@@ -1,4 +1,4 @@
-import '../widgets/corrective_action_submit_dialog.dart';
+﻿import '../widgets/corrective_action_submit_dialog.dart';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -965,7 +965,7 @@ class FinalProductReportDisplayView extends StatelessWidget {
             1: FlexColumnWidth(2.5),
           },
           children: [
-            _buildTableRow('اسم المنتج', log.productName ?? 'مياه شرب معبأة سلسال'),
+            _buildTableRow('اسم المنتج', log.productName ?? 'مصنع سلسال للمياة المعبأة (وادي العين)'),
             _buildTableRow('حجم العبوة', log.bottleSize ?? '330 مل'),
             _buildTableRow('رقم التشغيلة', log.batchNumber ?? '-'),
             _buildTableRow('تاريخ الإنتاج', log.productionDate ?? dateStr),
@@ -1076,7 +1076,8 @@ class FinalProductReportDisplayView extends StatelessWidget {
               ? '${r.numericResult}$unit'
               : (r.textResult ?? '-');
 
-          final standardLimit = _getStandardLimit(paramName);
+          final dynamicStd = controller.getStandardString(r.parameterId);
+          final standardLimit = dynamicStd.isNotEmpty ? dynamicStd : _getStandardLimit(paramName);
           final isNonCompliant = !r.isCompliant;
 
           return TableRow(

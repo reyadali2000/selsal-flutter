@@ -18,13 +18,17 @@ class FinalProductController extends GetxController {
   var selectedProductObj = Rx<Product?>(null);
 
   // 1. Basic / Batch Info Controllers
-  final productNameController = TextEditingController(text: 'مياه شرب معبأة سلسال');
+  static const String fixedProductName = 'مصنع سلسال للمياة المعبأة (وادي العين)';
+  final productNameController = TextEditingController(
+    text: fixedProductName,
+  );
   final bottleSizeController = TextEditingController(text: '330 مل');
   var selectedBottleSize = '330 مل'.obs;
   final batchNumberController = TextEditingController();
   final productionDateController = TextEditingController();
   final samplingTimeController = TextEditingController();
-  var samplingLocation = 'أثناء التشغيل'.obs; // بداية التشغيل, أثناء التشغيل, نهاية التشغيل
+  var samplingLocation =
+      'أثناء التشغيل'.obs; // بداية التشغيل, أثناء التشغيل, نهاية التشغيل
   final producedQuantityController = TextEditingController(text: '5000 كرتون');
   final sampleTakerController = TextEditingController(text: 'صلاح الجابري');
   final notesController = TextEditingController();
@@ -37,6 +41,7 @@ class FinalProductController extends GetxController {
   final ncrNumberController = TextEditingController();
 
   // 3. Standards and Parameters
+  var allStandards = <QualityStandard>[];
   var standards = <QualityStandard>[].obs;
   var testParameters = <TestParameter>[].obs;
 
@@ -103,9 +108,10 @@ class FinalProductController extends GetxController {
 
   Future<void> loadReports({bool silent = false}) async {
     if (!silent) isLoading.value = true;
-    final branchId = Get.isRegistered<UserSessionService>()
-        ? UserSessionService.to.effectiveBranchFilter
-        : null;
+    final branchId =
+        Get.isRegistered<UserSessionService>()
+            ? UserSessionService.to.effectiveBranchFilter
+            : null;
 
     // الـ API هو المصدر الأساسي للبيانات (SQL Server) — التحميل منه أولاً
     if (Get.isRegistered<WaterQualityApiService>()) {
@@ -114,7 +120,8 @@ class FinalProductController extends GetxController {
           branchId: branchId,
           category: 'Final Product',
         );
-        reportsList.value = apiLogs.map((e) => WaterQualityLog.fromMap(e)).toList();
+        reportsList.value =
+            apiLogs.map((e) => WaterQualityLog.fromMap(e)).toList();
         if (!silent) isLoading.value = false;
         return;
       } catch (e) {
@@ -124,71 +131,101 @@ class FinalProductController extends GetxController {
 
     // مسار احتياطي: قاعدة البيانات المحلية
     final dbHelper = DatabaseHelper.instance;
-    reportsList.value = await dbHelper.getWaterQualityLogsByCategory('Final Product', branchId: branchId);
+    reportsList.value = await dbHelper.getWaterQualityLogsByCategory(
+      'Final Product',
+      branchId: branchId,
+    );
     if (!silent) isLoading.value = false;
   }
 
   Future<void> _loadReferenceData() async {
     isLoading.value = true;
     final dbHelper = DatabaseHelper.instance;
-    final userBranchId = Get.isRegistered<UserSessionService>() ? UserSessionService.to.effectiveBranchFilter : null;
+    final userBranchId =
+        Get.isRegistered<UserSessionService>()
+            ? UserSessionService.to.effectiveBranchFilter
+            : null;
 
     // الـ API هو المصدر الأساسي للبيانات المرجعية (الورديات، العبوات، البارامترات، المواصفات)
     if (Get.isRegistered<MasterDataApiService>()) {
       try {
-        final apiShifts = await MasterDataApiService.to.getShifts(branchId: userBranchId);
+        final apiShifts = await MasterDataApiService.to.getShifts(
+          branchId: userBranchId,
+        );
+        if (isClosed) return;
         if (apiShifts.isNotEmpty) {
           shifts.value = apiShifts.map((e) => Shift.fromMap(e)).toList();
         }
-        final apiProducts = await MasterDataApiService.to.getProducts(branchId: userBranchId);
+        final apiProducts = await MasterDataApiService.to.getProducts(
+          branchId: userBranchId,
+        );
+        if (isClosed) return;
         if (apiProducts.isNotEmpty) {
-          products.value = apiProducts.map((e) => Product.fromMap(e)).toList();
+          final mappedProducts =
+              apiProducts.map((e) => Product.fromMap(e)).toList();
+          products.value = mappedProducts;
+          dbHelper.syncProducts(mappedProducts).catchError((_) {});
         }
         final apiParams = await MasterDataApiService.to.getTestParameters();
+        if (isClosed) return;
         if (apiParams.isNotEmpty) {
-          final mappedParams = apiParams.map((e) => TestParameter.fromMap(e)).toList();
+          final mappedParams =
+              apiParams.map((e) => TestParameter.fromMap(e)).toList();
           testParameters.value = mappedParams;
           dbHelper.syncTestParameters(mappedParams).catchError((_) {});
         }
-        final apiStandards = await MasterDataApiService.to.getQualityStandards(waterType: 'Final Product');
+        final apiStandards = await MasterDataApiService.to.getQualityStandards(
+          waterType: 'Final Product',
+        );
+        if (isClosed) return;
         if (apiStandards.isNotEmpty) {
-          final mappedStandards = apiStandards.map((e) => QualityStandard.fromMap(e)).toList();
-          standards.value = mappedStandards;
-          dbHelper.syncQualityStandards(mappedStandards).catchError((_) {});
+          final mappedStandards =
+              apiStandards.map((e) => QualityStandard.fromMap(e)).toList();
+          allStandards = mappedStandards;
+          dbHelper
+              .syncQualityStandards(
+                mappedStandards,
+                waterType: 'Final Product',
+              )
+              .catchError((_) {});
         }
       } catch (e) {
         debugPrint('API load final product reference data error: $e');
       }
     }
 
+    if (isClosed) return;
+
     // مسار احتياطي: تعبئة ما لم يُجلب من الـ API من قاعدة البيانات المحلية
     if (shifts.isEmpty) {
       // ورديات مصنع المستخدم الحالي فقط — لكل مصنع وردياته الخاصة
       shifts.value = await dbHelper.getShiftsForBranch(userBranchId);
     }
+    if (isClosed) return;
     if (products.isEmpty) {
       // العبوات النشطة المرئية لهذا المستخدم حسب مصنعهم (مصفاة بالفرع)
       products.value = await dbHelper.getActiveProducts(branchId: userBranchId);
     }
+    if (isClosed) return;
     if (testParameters.isEmpty) {
       testParameters.value = await dbHelper.getTestParameters();
     }
-    if (standards.isEmpty) {
-      // Load standards for Final Product
-      standards.value = await dbHelper.getQualityStandards(null, 'Final Product');
-    }
+    if (isClosed) return;
 
     if (shifts.isNotEmpty) {
       selectedShiftObj.value ??= shifts.first;
     }
     if (products.isNotEmpty) {
       // العبوة المختارة يجب أن تنتمي لمصنع المستخدم المقيّد
-      final belongsToBranch = selectedProductObj.value == null ||
-          (userBranchId != null && userBranchId > 0 && selectedProductObj.value!.branchId != userBranchId);
-      if (selectedProductObj.value == null || belongsToBranch) {
+      final needsResetProduct =
+          selectedProductObj.value == null ||
+          (userBranchId != null &&
+              userBranchId > 0 &&
+              selectedProductObj.value!.branchId != userBranchId);
+      if (needsResetProduct) {
         selectedProductObj.value = products.first;
       }
-      productNameController.text = selectedProductObj.value!.name;
+      productNameController.text = fixedProductName;
       selectedBottleSize.value = selectedProductObj.value!.name;
       bottleSizeController.text = selectedProductObj.value!.name;
     } else {
@@ -198,8 +235,41 @@ class FinalProductController extends GetxController {
       bottleSizeController.text = '';
     }
 
-    _categorizeStandards();
+    await _applyProductStandards();
     isLoading.value = false;
+  }
+
+  Future<void> _applyProductStandards() async {
+    final prodId = selectedProductObj.value?.id;
+    List<QualityStandard> rawList;
+
+    if (allStandards.isNotEmpty) {
+      rawList =
+          allStandards
+              .where((s) => s.productId == prodId || s.productId == null)
+              .toList();
+    } else {
+      rawList = await DatabaseHelper.instance.getQualityStandards(
+        prodId,
+        'Final Product',
+      );
+    }
+
+    // إزالة تكرار البارامترات مع إعطاء الأولوية للمواصفة المخصصة للعبوة على المواصفة العامة
+    final Map<int, QualityStandard> uniqueByParam = {};
+    for (final std in rawList) {
+      final existing = uniqueByParam[std.parameterId];
+      if (existing == null) {
+        uniqueByParam[std.parameterId] = std;
+      } else if (existing.productId == null &&
+          std.productId == prodId &&
+          prodId != null) {
+        uniqueByParam[std.parameterId] = std;
+      }
+    }
+
+    standards.value = uniqueByParam.values.toList();
+    _categorizeStandards();
   }
 
   void _categorizeStandards() {
@@ -222,32 +292,36 @@ class FinalProductController extends GetxController {
       }
 
       if (!formControllers.containsKey(std.parameterId)) {
+        final pId = std.parameterId;
         var textCtrl = TextEditingController();
-        // Set smart default for text tests
-        if (std.expectedText != null && std.expectedText!.isNotEmpty) {
-          textCtrl.text = std.expectedText!;
-        }
-        textCtrl.addListener(() => _validateField(std));
+        textCtrl.addListener(() => _validateByParamId(pId));
 
-        formControllers[std.parameterId] = textCtrl;
-        formValidations[std.parameterId] = Rx<bool?>(null);
-        formNoteControllers[std.parameterId] = TextEditingController();
-        isNoteVisible[std.parameterId] = false.obs;
-
-        // Trigger initial validation
-        _validateField(std);
+        formControllers[pId] = textCtrl;
+        formValidations[pId] = Rx<bool?>(null);
+        formNoteControllers[pId] = TextEditingController();
+        isNoteVisible[pId] = false.obs;
       }
+
+      // التحقق من الحقل بناءً على القيمة الحالية للمعيار
+      _validateField(std);
+    }
+  }
+
+  void _validateByParamId(int parameterId) {
+    final std = standards.firstWhereOrNull((s) => s.parameterId == parameterId);
+    if (std != null) {
+      _validateField(std);
     }
   }
 
   void selectBottleSize(String size) {
     selectedBottleSize.value = size;
     bottleSizeController.text = size;
-    // مزامنة العبوة المختارة لتطبيق ارتباطها بالمصنع
+    // مزامنة العبوة المختارة لتطبيق ارتباطها بالمصنع ومعاييرها الخاصة
     final match = products.firstWhereOrNull((p) => p.name == size);
     if (match != null) {
       selectedProductObj.value = match;
-      productNameController.text = match.name;
+      _applyProductStandards();
     }
   }
 
@@ -261,7 +335,9 @@ class FinalProductController extends GetxController {
 
   void selectProduct(Product prod) {
     selectedProductObj.value = prod;
-    productNameController.text = prod.name;
+    selectedBottleSize.value = prod.name;
+    bottleSizeController.text = prod.name;
+    _applyProductStandards();
   }
 
   void generateBatchNumber() {
@@ -342,7 +418,8 @@ class FinalProductController extends GetxController {
   }
 
   Future<void> submitForm({bool isDraft = false}) async {
-    if (Get.isRegistered<UserSessionService>() && !UserSessionService.to.canCreateWaterReports) {
+    if (Get.isRegistered<UserSessionService>() &&
+        !UserSessionService.to.canCreateWaterReports) {
       Get.snackbar(
         'غير مصرح',
         'لا تملك صلاحية إدخال أو حفظ تقارير المياه في حسابك الحالي',
@@ -353,8 +430,12 @@ class FinalProductController extends GetxController {
     }
 
     if (batchNumberController.text.trim().isEmpty) {
-      Get.snackbar('تنبيه', 'الرجاء إدخال رقم التشغيلة (Batch Number)',
-          backgroundColor: Colors.orange.shade800, colorText: Colors.white);
+      Get.snackbar(
+        'تنبيه',
+        'الرجاء إدخال رقم التشغيلة (Batch Number)',
+        backgroundColor: Colors.orange.shade800,
+        colorText: Colors.white,
+      );
       return;
     }
 
@@ -373,12 +454,18 @@ class FinalProductController extends GetxController {
       for (var std in standards) {
         final text = formControllers[std.parameterId]?.text.trim() ?? '';
         final param = getParameterDetails(std.parameterId);
-        // Ozone and chlorine can be optional if not applicable
+        // Ozone, chlorine, temp, and EC can be optional if not applicable
+        final pName = (param?.nameAr ?? '').toLowerCase();
         if (param != null &&
-            (param.nameAr.contains('الأوزون') ||
-                param.nameAr.contains('الكلور') ||
-                param.nameAr.contains('درجة الحرارة') ||
-                param.nameAr.contains('التوصيلية'))) {
+            (pName.contains('الأوزون') ||
+                pName.contains('ozone') ||
+                pName.contains('الكلور') ||
+                pName.contains('chlorine') ||
+                pName.contains('cl') ||
+                pName.contains('درجة الحرارة') ||
+                pName.contains('temp') ||
+                pName.contains('التوصيلية') ||
+                pName.contains('ec'))) {
           continue;
         }
         // نتائج الميكروبيولوجي تصل بعد 24 ساعة — تُدخل لاحقاً في مرحلة منفصلة
@@ -386,8 +473,12 @@ class FinalProductController extends GetxController {
           continue;
         }
         if (text.isEmpty) {
-          Get.snackbar('تنبيه', 'الرجاء إكمال الفحص لجميع المعايير الإلزامية',
-              backgroundColor: Colors.orange.shade800, colorText: Colors.white);
+          Get.snackbar(
+            'تنبيه',
+            'الرجاء إكمال الفحص لجميع المعايير الإلزامية',
+            backgroundColor: Colors.orange.shade800,
+            colorText: Colors.white,
+          );
           return;
         }
       }
@@ -409,12 +500,14 @@ class FinalProductController extends GetxController {
       }
     }
 
-    final session = Get.isRegistered<UserSessionService>() ? UserSessionService.to : null;
+    final session =
+        Get.isRegistered<UserSessionService>() ? UserSessionService.to : null;
     final currentUserId = session?.currentUser.value?.id ?? 1;
 
     final log = WaterQualityLog(
       id: currentLogId,
-      branchId: selectedShiftObj.value?.branchId ?? (session?.assignedBranchId ?? 1),
+      branchId:
+          selectedShiftObj.value?.branchId ?? (session?.assignedBranchId ?? 1),
       shiftId: selectedShiftObj.value?.id ?? 1,
       createdBy: currentUserId,
       reportCategory: 'Final Product',
@@ -423,11 +516,12 @@ class FinalProductController extends GetxController {
       isCompliant: isCompliant,
       generalNotes: notesController.text.trim(),
       approvalStatus: status,
-      sampleTaker: sampleTakerController.text.trim().isNotEmpty
-          ? sampleTakerController.text.trim()
-          : (session?.currentUserName.value.isNotEmpty == true
-              ? session!.currentUserName.value
-              : 'أخصائي الجودة'),
+      sampleTaker:
+          sampleTakerController.text.trim().isNotEmpty
+              ? sampleTakerController.text.trim()
+              : (session?.currentUserName.value.isNotEmpty == true
+                  ? session!.currentUserName.value
+                  : 'أخصائي الجودة'),
       ncrNumber: ncrNumberController.text.trim(),
       productName: productNameController.text.trim(),
       bottleSize: selectedBottleSize.value,
@@ -485,19 +579,26 @@ class FinalProductController extends GetxController {
           );
           if (savedId != null && savedId > 0) {
             if (previousLocalId != null && previousLocalId != savedId) {
-              await DatabaseHelper.instance.deleteWaterQualityReport(previousLocalId);
+              await DatabaseHelper.instance.deleteWaterQualityReport(
+                previousLocalId,
+              );
             }
             currentLogId = savedId;
             effectiveLog = log.copyWith(id: savedId);
-            effectiveResults = results.map((r) => WaterQualityResult(
-              id: r.id,
-              logId: savedId,
-              parameterId: r.parameterId,
-              numericResult: r.numericResult,
-              textResult: r.textResult,
-              isCompliant: r.isCompliant,
-              notes: r.notes,
-            )).toList();
+            effectiveResults =
+                results
+                    .map(
+                      (r) => WaterQualityResult(
+                        id: r.id,
+                        logId: savedId,
+                        parameterId: r.parameterId,
+                        numericResult: r.numericResult,
+                        textResult: r.textResult,
+                        isCompliant: r.isCompliant,
+                        notes: r.notes,
+                      ),
+                    )
+                    .toList();
           }
         } catch (e) {
           debugPrint('API saveLog final product error: $e');
@@ -505,7 +606,10 @@ class FinalProductController extends GetxController {
       }
 
       // حفظ نسخة الكاش المحلي متطابقة مع معرّف السيرفر
-      await DatabaseHelper.instance.saveWaterQualityReport(effectiveLog, effectiveResults);
+      await DatabaseHelper.instance.saveWaterQualityReport(
+        effectiveLog,
+        effectiveResults,
+      );
       await loadReports();
 
       // Trigger notification if submitted for approval
@@ -537,8 +641,12 @@ class FinalProductController extends GetxController {
       _resetForm();
       isFormVisible.value = false;
     } catch (e) {
-      Get.snackbar('خطأ', 'حدث خطأ أثناء الحفظ: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'حدث خطأ أثناء الحفظ: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
@@ -564,14 +672,20 @@ class FinalProductController extends GetxController {
     batchNumberController.text = log.batchNumber ?? '';
     notesController.text = log.generalNotes ?? '';
     sampleTakerController.text = log.sampleTaker ?? 'صلاح الجابري';
-    productNameController.text = log.productName ?? 'مياه شرب معبأة سلسال';
+    productNameController.text = (log.productName?.isNotEmpty == true)
+        ? log.productName!
+        : fixedProductName;
     selectedBottleSize.value = log.bottleSize ?? '';
     bottleSizeController.text = selectedBottleSize.value;
     // مزامنة العبوة المحفوظة مع كائن المنتج المرتبط (لتطبيق ارتباط المصنع)
-    final savedProduct = products.firstWhereOrNull((p) => p.name == selectedBottleSize.value);
+    final savedProduct = products.firstWhereOrNull(
+      (p) => p.name == selectedBottleSize.value,
+    );
     selectedProductObj.value = savedProduct;
-    productionDateController.text = log.productionDate ?? DateFormat('yyyy-MM-dd').format(DateTime.now());
-    samplingTimeController.text = log.samplingTime ?? DateFormat('HH:mm').format(DateTime.now());
+    productionDateController.text =
+        log.productionDate ?? DateFormat('yyyy-MM-dd').format(DateTime.now());
+    samplingTimeController.text =
+        log.samplingTime ?? DateFormat('HH:mm').format(DateTime.now());
     samplingLocation.value = log.samplingLocation ?? 'أثناء التشغيل';
     producedQuantityController.text = log.producedQuantity ?? '5000 كرتون';
     ncrNumberController.text = log.ncrNumber ?? '';
@@ -581,11 +695,14 @@ class FinalProductController extends GetxController {
     isCompliantDecision.value = log.isCompliant;
 
     if (shifts.isNotEmpty) {
-      selectedShiftObj.value = shifts.firstWhereOrNull((s) => s.id == log.shiftId) ?? shifts.first;
+      selectedShiftObj.value =
+          shifts.firstWhereOrNull((s) => s.id == log.shiftId) ?? shifts.first;
     }
 
     if (standards.isEmpty) {
       await _loadReferenceData();
+    } else {
+      await _applyProductStandards();
     }
 
     // تحميل نتائج الفحص من الـ API (المصدر الأساسي) إن أمكن
@@ -594,9 +711,14 @@ class FinalProductController extends GetxController {
       try {
         final apiLog = await WaterQualityApiService.to.getLogById(log.id!);
         if (apiLog != null && apiLog['results'] is List) {
-          results = (apiLog['results'] as List)
-              .map((r) => WaterQualityResult.fromMap(Map<String, dynamic>.from(r)))
-              .toList();
+          results =
+              (apiLog['results'] as List)
+                  .map(
+                    (r) => WaterQualityResult.fromMap(
+                      Map<String, dynamic>.from(r),
+                    ),
+                  )
+                  .toList();
         }
       } catch (e) {
         debugPrint('API load final product edit results error: $e');
@@ -639,25 +761,24 @@ class FinalProductController extends GetxController {
     _initDateTimeDefaults();
     notesController.clear();
     ncrNumberController.clear();
+    productNameController.text = fixedProductName;
     isIsolated.value = false;
     isHoldIssued.value = false;
     isRejectIssued.value = false;
     isCompliantDecision.value = true;
-    sampleTakerController.text = UserSessionService.to.currentUserName.value.isNotEmpty
-        ? UserSessionService.to.currentUserName.value
-        : 'صلاح الجابري';
+    sampleTakerController.text =
+        UserSessionService.to.currentUserName.value.isNotEmpty
+            ? UserSessionService.to.currentUserName.value
+            : 'صلاح الجابري';
 
     for (var std in standards) {
       final pId = std.parameterId;
-      if (std.expectedText != null && std.expectedText!.isNotEmpty) {
-        formControllers[pId]?.text = std.expectedText!;
-      } else {
-        formControllers[pId]?.clear();
-      }
+      formControllers[pId]?.clear();
+      formValidations[pId]?.value = null;
       formNoteControllers[pId]?.clear();
       isNoteVisible[pId]?.value = false;
-      _validateField(std);
     }
+    isAllCompliant.value = false;
   }
 
   @override

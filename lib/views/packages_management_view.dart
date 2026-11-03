@@ -323,7 +323,7 @@ class PackagesManagementView extends StatelessWidget {
                         scale: 0.82,
                         child: Switch.adaptive(
                           value: current.isActive,
-                          activeThumbColor: branchColor,
+                          activeColor: branchColor,
                           onChanged: (_) => controller.toggleActive(current),
                         ),
                       ),
@@ -492,7 +492,7 @@ class PackagesManagementView extends StatelessWidget {
                   children: [
                     Switch.adaptive(
                       value: current.isActive,
-                      activeThumbColor: branchColor,
+                      activeColor: branchColor,
                       onChanged: (_) => controller.toggleActive(current),
                     ),
                     const SizedBox(width: 4),

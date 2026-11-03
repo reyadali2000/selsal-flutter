@@ -506,7 +506,6 @@ class DynamicReportBuilderView extends StatelessWidget {
           return ReorderableListView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      // ignore: deprecated_member_use
       onReorder: (oldIndex, newIndex) {
         controller.reorderSection(oldIndex, newIndex);
       },
@@ -572,8 +571,7 @@ class DynamicReportBuilderView extends StatelessWidget {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   buildDefaultDragHandles: false,
-                  // ignore: deprecated_member_use
-      onReorder: (oldIndex, newIndex) {
+                  onReorder: (oldIndex, newIndex) {
                     controller.reorderFields(section.id!, oldIndex, newIndex);
                   },
                   children: sectionFields.map((field) {

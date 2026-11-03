@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import '../controllers/final_product_controller.dart';
@@ -694,8 +694,13 @@ class FinalProductEntryPage extends StatelessWidget {
     return AppTextField(
       controller: controller.productNameController,
       label: 'اسم المنتج',
-      hint: 'مياه شرب معبأة سلسال',
+      hint: FinalProductController.fixedProductName,
       prefixIcon: Icons.water_drop_outlined,
+      suffixIcon: const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 10),
+        child: Icon(Icons.lock_outline, size: 18, color: Colors.grey),
+      ),
+      readOnly: true,
     );
   }
 

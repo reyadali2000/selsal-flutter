@@ -16,7 +16,7 @@ class RawWaterReportDisplayController extends GetxController {
   var isLoading = false.obs;
 
   var currentLog = Rx<WaterQualityLog?>(null);
-  
+
   var results = <WaterQualityResult>[].obs;
   var parameters = <int, TestParameter>{}.obs;
   var standards = <int, QualityStandard>{}.obs;
@@ -30,7 +30,7 @@ class RawWaterReportDisplayController extends GetxController {
   var qmSignatureBytes = Rx<Uint8List?>(null);
   var gmSignatureBytes = Rx<Uint8List?>(null);
   var rejectedSignatureBytes = Rx<Uint8List?>(null);
-  
+
   var microEntererSignatureBytes = Rx<Uint8List?>(null);
   var microQmSignatureBytes = Rx<Uint8List?>(null);
   var microGmSignatureBytes = Rx<Uint8List?>(null);
@@ -55,19 +55,28 @@ class RawWaterReportDisplayController extends GetxController {
     if (currentLog.value?.id != null) {
       if (Get.isRegistered<WaterQualityApiService>()) {
         try {
-          final apiLog = await WaterQualityApiService.to.getLogById(currentLog.value!.id!);
+          final apiLog = await WaterQualityApiService.to.getLogById(
+            currentLog.value!.id!,
+          );
           if (apiLog != null) {
-            final logData = apiLog['log'] is Map
-                ? Map<String, dynamic>.from(apiLog['log'])
-                : (apiLog['Log'] is Map
-                    ? Map<String, dynamic>.from(apiLog['Log'])
-                    : apiLog);
+            final logData =
+                apiLog['log'] is Map
+                    ? Map<String, dynamic>.from(apiLog['log'])
+                    : (apiLog['Log'] is Map
+                        ? Map<String, dynamic>.from(apiLog['Log'])
+                        : apiLog);
             currentLog.value = WaterQualityLog.fromMap(logData);
-            final resultsList = apiLog['results'] ?? apiLog['Results'] ?? logData['results'];
+            final resultsList =
+                apiLog['results'] ?? apiLog['Results'] ?? logData['results'];
             if (resultsList is List) {
-              results.value = resultsList
-                  .map((r) => WaterQualityResult.fromMap(Map<String, dynamic>.from(r)))
-                  .toList();
+              results.value =
+                  (resultsList)
+                      .map(
+                        (r) => WaterQualityResult.fromMap(
+                          Map<String, dynamic>.from(r),
+                        ),
+                      )
+                      .toList();
             }
           }
         } catch (e) {
@@ -76,7 +85,9 @@ class RawWaterReportDisplayController extends GetxController {
       }
 
       if (results.isEmpty) {
-        final freshLog = await dbHelper.getWaterQualityLogById(currentLog.value!.id!);
+        final freshLog = await dbHelper.getWaterQualityLogById(
+          currentLog.value!.id!,
+        );
         if (freshLog != null) {
           currentLog.value = freshLog;
         }
@@ -93,16 +104,22 @@ class RawWaterReportDisplayController extends GetxController {
             if (p.id != null) parameters[p.id!] = p;
           }
         }
-        final apiStds = await MasterDataApiService.to.getQualityStandards(waterType: 'Raw Water');
+        final apiStds = await MasterDataApiService.to.getQualityStandards(
+          waterType: 'Raw Water',
+        );
         if (apiStds.isNotEmpty) {
           for (var sMap in apiStds) {
             final std = QualityStandard.fromMap(sMap);
             standards[std.parameterId] = std;
           }
         }
-        final apiShifts = await MasterDataApiService.to.getShifts(branchId: log.branchId);
+        final apiShifts = await MasterDataApiService.to.getShifts(
+          branchId: log.branchId,
+        );
         if (apiShifts.isNotEmpty) {
-          final shift = apiShifts.firstWhereOrNull((s) => s['id'] == log.shiftId);
+          final shift = apiShifts.firstWhereOrNull(
+            (s) => s['id'] == log.shiftId,
+          );
           if (shift != null) {
             shiftName.value = shift['name'] ?? 'غير معروف';
           }
@@ -120,7 +137,10 @@ class RawWaterReportDisplayController extends GetxController {
     }
 
     if (standards.isEmpty) {
-      final allStandards = await dbHelper.getQualityStandards(null, 'Raw Water');
+      final allStandards = await dbHelper.getQualityStandards(
+        null,
+        'Raw Water',
+      );
       for (var std in allStandards) {
         standards[std.parameterId] = std;
       }
@@ -148,7 +168,10 @@ class RawWaterReportDisplayController extends GetxController {
     // Load visual overlay signatures
     try {
       final sigService = UserSignatureService.instance;
-      final inspName = log.sampleTaker?.isNotEmpty == true ? log.sampleTaker! : 'أخصائي الجودة';
+      final inspName =
+          log.sampleTaker?.isNotEmpty == true
+              ? log.sampleTaker!
+              : 'أخصائي الجودة';
       inspectorSignatureBytes.value = await sigService.getSignatureBytesForUser(
         userName: inspName,
         userPosition: 'منفذ الفحص / أخصائي جودة',
@@ -158,7 +181,8 @@ class RawWaterReportDisplayController extends GetxController {
       // لها الأولوية إن وُجدت
       final isClosed = log.approvalStatus == 'Closed';
       final effectiveQm = log.qmApprovedBy;
-      final effectiveGm = log.gmApprovedBy ?? (isClosed ? log.gmDecisionBy : null);
+      final effectiveGm =
+          log.gmApprovedBy ?? (isClosed ? log.gmDecisionBy : null);
 
       if (effectiveQm != null && effectiveQm.isNotEmpty) {
         qmSignatureBytes.value = await sigService.getSignatureBytesForUser(
@@ -192,10 +216,11 @@ class RawWaterReportDisplayController extends GetxController {
             gmDecisionBy: log.gmDecisionBy,
             status: rejStatus,
           );
-          rejectedSignatureBytes.value = await sigService.getSignatureBytesForUser(
-            userName: rejector,
-            userPosition: isGmRejector ? 'مدير المصنع' : 'مدير الجودة',
-          );
+          rejectedSignatureBytes.value = await sigService
+              .getSignatureBytesForUser(
+                userName: rejector,
+                userPosition: isGmRejector ? 'مدير المصنع' : 'مدير الجودة',
+              );
         } else {
           rejectedSignatureBytes.value = null;
         }
@@ -208,10 +233,11 @@ class RawWaterReportDisplayController extends GetxController {
       final microGm = log.microGmApprovedBy;
 
       if (microEnterer != null && microEnterer.isNotEmpty) {
-        microEntererSignatureBytes.value = await sigService.getSignatureBytesForUser(
-          userName: microEnterer,
-          userPosition: 'منفذ الفحص / أخصائي جودة',
-        );
+        microEntererSignatureBytes.value = await sigService
+            .getSignatureBytesForUser(
+              userName: microEnterer,
+              userPosition: 'منفذ الفحص / أخصائي جودة',
+            );
       } else {
         microEntererSignatureBytes.value = null;
       }
@@ -268,9 +294,10 @@ class RawWaterReportDisplayController extends GetxController {
       return;
     }
 
-    final qmName = session.currentUserName.value.isNotEmpty
-        ? session.currentUserName.value
-        : 'حمود يسر (مدير الجودة)';
+    final qmName =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : 'حمود يسر (مدير الجودة)';
     final now = DateTime.now();
 
     try {
@@ -297,7 +324,8 @@ class RawWaterReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         await NotificationService.to.sendNotification(
           title: 'تقرير مياه خام بانتظار اعتماد مدير المصنع',
-          body: 'تم اعتماد التقرير رقم (${log.batchNumber}) من مدير الجودة ($qmName) وبانتظار اعتمادك النهائي.',
+          body:
+              'تم اعتماد التقرير رقم (${log.batchNumber}) من مدير الجودة ($qmName) وبانتظار اعتمادك النهائي.',
           reportId: log.id,
           reportCategory: 'Raw Water',
           targetRole: 'FactoryManager',
@@ -305,7 +333,8 @@ class RawWaterReportDisplayController extends GetxController {
         );
         await NotificationService.to.sendNotification(
           title: 'تم اعتماد تقرير فحص المياه الخام من مدير الجودة ✓',
-          body: 'اعتمد مدير الجودة ($qmName) تقرير المياه الخام رقم (${log.batchNumber}) وتم إرساله لمدير المصنع للاعتماد النهائي.',
+          body:
+              'اعتمد مدير الجودة ($qmName) تقرير المياه الخام رقم (${log.batchNumber}) وتم إرساله لمدير المصنع للاعتماد النهائي.',
           reportId: log.id,
           reportCategory: 'Raw Water',
           targetRole: 'QualitySpecialist',
@@ -325,7 +354,12 @@ class RawWaterReportDisplayController extends GetxController {
         duration: const Duration(seconds: 3),
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل اعتماد التقرير: $e', backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل اعتماد التقرير: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     } finally {
       isLoading.value = false;
     }
@@ -351,7 +385,8 @@ class RawWaterReportDisplayController extends GetxController {
       );
       return;
     }
-    final expectedNext = log.microResultsPending ? 'Awaiting_Micro_Results' : 'Approved';
+    final expectedNext =
+        log.microResultsPending ? 'Awaiting_Micro_Results' : 'Approved';
     if (!ApprovalStatus.canTransition(log.approvalStatus, expectedNext)) {
       Get.snackbar(
         'تنبيه',
@@ -362,9 +397,10 @@ class RawWaterReportDisplayController extends GetxController {
       return;
     }
 
-    final gmName = session.currentUserName.value.isNotEmpty
-        ? session.currentUserName.value
-        : 'خالد العمري (مدير المصنع)';
+    final gmName =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : 'خالد العمري (مدير المصنع)';
     final now = DateTime.now();
 
     try {
@@ -399,7 +435,8 @@ class RawWaterReportDisplayController extends GetxController {
         if (Get.isRegistered<NotificationService>()) {
           await NotificationService.to.sendNotification(
             title: 'اعتماد مبدئي لتقرير فحص المياه الخام',
-            body: 'اعتمد مدير المصنع ($gmName) التقرير رقم (${log.batchNumber}) مبدئياً. بانتظار إدخال نتائج الفحص الميكروبيولوجي للاعتماد النهائي.',
+            body:
+                'اعتمد مدير المصنع ($gmName) التقرير رقم (${log.batchNumber}) مبدئياً. بانتظار إدخال نتائج الفحص الميكروبيولوجي للاعتماد النهائي.',
             reportId: log.id,
             reportCategory: 'Raw Water',
             targetRole: 'QualitySpecialist',
@@ -443,7 +480,8 @@ class RawWaterReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         await NotificationService.to.sendNotification(
           title: 'اعتماد نهائي لتقرير فحص المياه الخام',
-          body: 'تم الاعتماد النهائي لتقرير فحص المياه الخام رقم (${log.batchNumber}) بنجاح من مدير المصنع.',
+          body:
+              'تم الاعتماد النهائي لتقرير فحص المياه الخام رقم (${log.batchNumber}) بنجاح من مدير المصنع.',
           reportId: log.id,
           reportCategory: 'Raw Water',
           targetRole: 'All',
@@ -463,28 +501,42 @@ class RawWaterReportDisplayController extends GetxController {
         duration: const Duration(seconds: 3),
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل الاعتماد النهائي: $e', backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل الاعتماد النهائي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     } finally {
       isLoading.value = false;
     }
   }
 
   /// إدخال نتائج الفحص الميكروبيولوجي (المرحلة الثانية) بعد الاعتماد المبدئي أو إعادة السحب
-  Future<void> submitMicrobiologicalResults(List<WaterQualityResult> microResults) async {
+  Future<void> submitMicrobiologicalResults(
+    List<WaterQualityResult> microResults,
+  ) async {
     final st = log.approvalStatus;
-    final canEnterMicro = st == 'Awaiting_Micro_Results' ||
+    final canEnterMicro =
+        st == 'Awaiting_Micro_Results' ||
         st == 'Micro_Resample_Pending' ||
         st == 'Micro_Rejected' ||
         st == 'Micro_Corrective_In_Progress' ||
         (st == 'Closed' && log.microResultsPending);
     if (!canEnterMicro) {
-      Get.snackbar('تنبيه', 'لا يمكن إدخال النتائج الميكروبيولوجية في الحالة الحالية للتقرير',
-          backgroundColor: Colors.orange.shade800, colorText: Colors.white);
+      Get.snackbar(
+        'تنبيه',
+        'لا يمكن إدخال النتائج الميكروبيولوجية في الحالة الحالية للتقرير',
+        backgroundColor: Colors.orange.shade800,
+        colorText: Colors.white,
+      );
       return;
     }
 
     final session = UserSessionService.to;
-    if (!session.canEditReports && !session.canCreateWaterReports && !session.isAdmin) {
+    if (!session.canEditReports &&
+        !session.canCreateWaterReports &&
+        !session.isAdmin) {
       Get.snackbar(
         'غير مصرح',
         'لا تملك صلاحية إدخال نتائج الفحص الميكروبيولوجي',
@@ -494,9 +546,10 @@ class RawWaterReportDisplayController extends GetxController {
       return;
     }
 
-    final enteredBy = session.currentUserName.value.isNotEmpty
-        ? session.currentUserName.value
-        : (log.sampleTaker ?? 'أخصائي الجودة');
+    final enteredBy =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : (log.sampleTaker ?? 'أخصائي الجودة');
 
     try {
       isLoading.value = true;
@@ -518,7 +571,10 @@ class RawWaterReportDisplayController extends GetxController {
         }
       }
 
-      await DatabaseHelper.instance.saveMicrobiologicalResults(log.id!, microResults);
+      await DatabaseHelper.instance.saveMicrobiologicalResults(
+        log.id!,
+        microResults,
+      );
 
       await DatabaseHelper.instance.updateWaterQualityLogApproval(
         logId: log.id!,
@@ -531,7 +587,8 @@ class RawWaterReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         await NotificationService.to.sendNotification(
           title: 'نتائج الفحص الميكروبيولوجي بانتظار الاعتماد',
-          body: 'أدخل $enteredBy نتائج الفحص الميكروبيولوجي للتقرير رقم (${log.batchNumber}) وهو بانتظار اعتماد مدير الجودة.',
+          body:
+              'أدخل $enteredBy نتائج الفحص الميكروبيولوجي للتقرير رقم (${log.batchNumber}) وهو بانتظار اعتماد مدير الجودة.',
           reportId: log.id,
           reportCategory: 'Raw Water',
           targetRole: 'QualityManager',
@@ -551,8 +608,12 @@ class RawWaterReportDisplayController extends GetxController {
         duration: const Duration(seconds: 3),
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل حفظ نتائج الفحص الميكروبيولوجي: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل حفظ نتائج الفحص الميكروبيولوجي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     } finally {
       isLoading.value = false;
     }
@@ -580,9 +641,10 @@ class RawWaterReportDisplayController extends GetxController {
       return;
     }
 
-    final qmName = session.currentUserName.value.isNotEmpty
-        ? session.currentUserName.value
-        : 'حمود يسر (مدير الجودة)';
+    final qmName =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : 'حمود يسر (مدير الجودة)';
 
     try {
       isLoading.value = true;
@@ -609,7 +671,8 @@ class RawWaterReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         await NotificationService.to.sendNotification(
           title: 'نتائج الفحص الميكروبيولوجي بانتظار الاعتماد النهائي',
-          body: 'اعتمد مدير الجودة ($qmName) نتائج الفحص الميكروبيولوجي للتقرير رقم (${log.batchNumber}) وبانتظار اعتمادك النهائي.',
+          body:
+              'اعتمد مدير الجودة ($qmName) نتائج الفحص الميكروبيولوجي للتقرير رقم (${log.batchNumber}) وبانتظار اعتمادك النهائي.',
           reportId: log.id,
           reportCategory: 'Raw Water',
           targetRole: 'FactoryManager',
@@ -617,7 +680,8 @@ class RawWaterReportDisplayController extends GetxController {
         );
         await NotificationService.to.sendNotification(
           title: 'تم اعتماد نتائج الفحص الميكروبيولوجي من مدير الجودة ✓',
-          body: 'اعتمد مدير الجودة ($qmName) نتائج الفحص الميكروبيولوجي للتقرير رقم (${log.batchNumber}) وتم إرسالها للاعتماد النهائي.',
+          body:
+              'اعتمد مدير الجودة ($qmName) نتائج الفحص الميكروبيولوجي للتقرير رقم (${log.batchNumber}) وتم إرسالها للاعتماد النهائي.',
           reportId: log.id,
           reportCategory: 'Raw Water',
           targetRole: 'QualitySpecialist',
@@ -637,7 +701,12 @@ class RawWaterReportDisplayController extends GetxController {
         duration: const Duration(seconds: 3),
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل اعتماد النتائج: $e', backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل اعتماد النتائج: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     } finally {
       isLoading.value = false;
     }
@@ -665,9 +734,10 @@ class RawWaterReportDisplayController extends GetxController {
       return;
     }
 
-    final gmName = session.currentUserName.value.isNotEmpty
-        ? session.currentUserName.value
-        : 'خالد العمري (مدير المصنع)';
+    final gmName =
+        session.currentUserName.value.isNotEmpty
+            ? session.currentUserName.value
+            : 'خالد العمري (مدير المصنع)';
 
     try {
       isLoading.value = true;
@@ -696,7 +766,8 @@ class RawWaterReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         await NotificationService.to.sendNotification(
           title: 'تم الاعتماد النهائي لنتائج الفحص الميكروبيولوجي',
-          body: 'تم الاعتماد النهائي لنتائج الفحص الميكروبيولوجي للتقرير رقم (${log.batchNumber}) بنجاح من مدير المصنع.',
+          body:
+              'تم الاعتماد النهائي لنتائج الفحص الميكروبيولوجي للتقرير رقم (${log.batchNumber}) بنجاح من مدير المصنع.',
           reportId: log.id,
           reportCategory: 'Raw Water',
           targetRole: 'All',
@@ -716,7 +787,12 @@ class RawWaterReportDisplayController extends GetxController {
         duration: const Duration(seconds: 3),
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل الاعتماد النهائي: $e', backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل الاعتماد النهائي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     } finally {
       isLoading.value = false;
     }
@@ -732,30 +808,44 @@ class RawWaterReportDisplayController extends GetxController {
     String? notes,
   }) async {
     if (reason.trim().isEmpty) {
-      Get.snackbar('تنبيه', 'يرجى كتابة سبب رفض نتائج الفحص الميكروبيولوجي',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'تنبيه',
+        'يرجى كتابة سبب رفض نتائج الفحص الميكروبيولوجي',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
     final session = UserSessionService.to;
     if (!session.canRejectReports) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية رفض التقارير في حسابك الحالي',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية رفض التقارير في حسابك الحالي',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
     if (!session.canApproveBranchData(log.branchId)) {
-      Get.snackbar('غير مصرح', 'لا تملك صلاحية رفض هذا التقرير التابع لمصنع آخر',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'غير مصرح',
+        'لا تملك صلاحية رفض هذا التقرير التابع لمصنع آخر',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
-    final rejectorName = '${session.currentUserName.value} (${session.roleTitle})';
+    final rejectorName =
+        '${session.currentUserName.value} (${session.roleTitle})';
     final isResample = actionType == 'resample';
-    final newStatus = isResample
-        ? ApprovalStatus.microResamplePending
-        : ((correctiveAction != null && correctiveAction.isNotEmpty)
-            ? ApprovalStatus.microCorrectiveInProgress
-            : ApprovalStatus.microRejected);
+    final newStatus =
+        isResample
+            ? ApprovalStatus.microResamplePending
+            : ((correctiveAction != null && correctiveAction.isNotEmpty)
+                ? ApprovalStatus.microCorrectiveInProgress
+                : ApprovalStatus.microRejected);
 
     try {
       if (Get.isRegistered<WaterQualityApiService>()) {
@@ -795,12 +885,14 @@ class RawWaterReportDisplayController extends GetxController {
 
       if (Get.isRegistered<NotificationService>()) {
         NotificationService.to.sendNotification(
-          title: isResample
-              ? 'مطلوب إعادة سحب عينة ميكروبيولوجية للمياه الخام'
-              : 'تم رفض نتائج الفحص الميكروبيولوجي للمياه الخام',
-          body: isResample
-              ? 'طلب $rejectorName إعادة سحب عينة ميكروبيولوجية جديدة للبئر (${log.wellNumber ?? ""}): $reason'
-              : 'رفض $rejectorName نتائج الفحص الميكروبيولوجي للبئر (${log.wellNumber ?? ""}): $reason',
+          title:
+              isResample
+                  ? 'مطلوب إعادة سحب عينة ميكروبيولوجية للمياه الخام'
+                  : 'تم رفض نتائج الفحص الميكروبيولوجي للمياه الخام',
+          body:
+              isResample
+                  ? 'طلب $rejectorName إعادة سحب عينة ميكروبيولوجية جديدة للبئر (${log.wellNumber ?? ""}): $reason'
+                  : 'رفض $rejectorName نتائج الفحص الميكروبيولوجي للبئر (${log.wellNumber ?? ""}): $reason',
           reportId: log.id,
           reportCategory: 'Raw Water',
           targetRole: 'QualitySpecialist',
@@ -809,23 +901,35 @@ class RawWaterReportDisplayController extends GetxController {
       }
 
       Get.snackbar(
-        isResample ? 'تم طلب إعادة سحب عينة' : 'تم رفض نتائج الفحص الميكروبيولوجي',
+        isResample
+            ? 'تم طلب إعادة سحب عينة'
+            : 'تم رفض نتائج الفحص الميكروبيولوجي',
         isResample
             ? 'تم حفظ طلب إعادة السحب وإبقاء الفحص الفيزيوكيميائي الأولي معتمداً وسارياً.'
             : 'تم رفض نتائج الفحص الميكروبيولوجي مع الحفاظ على اعتماد الفحص الفيزيوكيميائي الأولي.',
-        backgroundColor: isResample ? const Color(0xFF00838F) : Colors.red.shade700,
+        backgroundColor:
+            isResample ? const Color(0xFF00838F) : Colors.red.shade700,
         colorText: Colors.white,
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل رفض نتائج الميكروبيولوجي: $e',
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل رفض نتائج الميكروبيولوجي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
   Future<void> rejectReport(RejectionPayload payload) async {
     if (!payload.isValid) {
-      Get.snackbar('تنبيه', 'يرجى كتابة سبب الرفض', backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'تنبيه',
+        'يرجى كتابة سبب الرفض',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
       return;
     }
 
@@ -851,16 +955,16 @@ class RawWaterReportDisplayController extends GetxController {
 
     try {
       isLoading.value = true;
-      final rejectorName = session.currentUserName.value.isNotEmpty
-          ? session.currentUserName.value
-          : session.roleTitle;
+      final rejectorName =
+          session.currentUserName.value.isNotEmpty
+              ? session.currentUserName.value
+              : session.roleTitle;
       final rejectorRole = session.roleTitle;
       final rejectorFull = '$rejectorName ($rejectorRole)';
 
       // الحالة الجديدة: يعود لمنفذ الفحص للتنفيذ والتوثيق
-      final newStatus = payload.hasCorrectiveAction
-          ? 'Corrective_In_Progress'
-          : 'Rejected';
+      final newStatus =
+          payload.hasCorrectiveAction ? 'Corrective_In_Progress' : 'Rejected';
 
       if (Get.isRegistered<WaterQualityApiService>()) {
         try {
@@ -902,7 +1006,8 @@ class RawWaterReportDisplayController extends GetxController {
         // إشعار أخصائي الجودة المسؤول
         await NotificationService.to.sendNotification(
           title: 'تم رفض تقرير فحص المياه الخام',
-          body: 'قام $rejectorFull برفض التقرير رقم (${log.batchNumber}). السبب: ${payload.reason}'
+          body:
+              'قام $rejectorFull برفض التقرير رقم (${log.batchNumber}). السبب: ${payload.reason}'
               '${payload.hasCorrectiveAction ? "\nالإجراء التصحيحي: ${payload.correctiveAction}" : ""}',
           reportId: log.id,
           reportCategory: 'Raw Water',
@@ -914,7 +1019,8 @@ class RawWaterReportDisplayController extends GetxController {
         if (payload.hasCorrectiveAction) {
           await NotificationService.to.sendNotification(
             title: 'إجراء تصحيحي جديد مطلوب تنفيذه',
-            body: 'تم رفض تقرير المياه الخام (${log.batchNumber}) وتعيين إجراء تصحيحي: ${payload.correctiveAction}'
+            body:
+                'تم رفض تقرير المياه الخام (${log.batchNumber}) وتعيين إجراء تصحيحي: ${payload.correctiveAction}'
                 ' — المسؤول: ${payload.correctiveOwner}، يرجى التنفيذ والتوثيق.',
             reportId: log.id,
             reportCategory: 'Raw Water',
@@ -927,7 +1033,9 @@ class RawWaterReportDisplayController extends GetxController {
       await _loadReportData();
 
       Get.snackbar(
-        payload.hasCorrectiveAction ? 'تم الرفض وتعيين إجراء تصحيحي' : 'تم رفض التقرير',
+        payload.hasCorrectiveAction
+            ? 'تم الرفض وتعيين إجراء تصحيحي'
+            : 'تم رفض التقرير',
         payload.hasCorrectiveAction
             ? 'تمت إعادة التقرير مع توثيق سبب الرفض والإجراء التصحيحي'
             : 'تمت إعادة التقرير مع توثيق سبب الرفض',
@@ -938,7 +1046,12 @@ class RawWaterReportDisplayController extends GetxController {
         duration: const Duration(seconds: 3),
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل رفض التقرير: $e', backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل رفض التقرير: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     } finally {
       isLoading.value = false;
     }
@@ -968,9 +1081,10 @@ class RawWaterReportDisplayController extends GetxController {
 
     try {
       isLoading.value = true;
-      final qmName = session.currentUserName.value.isNotEmpty
-          ? session.currentUserName.value
-          : 'مدير الجودة';
+      final qmName =
+          session.currentUserName.value.isNotEmpty
+              ? session.currentUserName.value
+              : 'مدير الجودة';
       final qmFull = '$qmName (مدير الجودة)';
       final now = DateTime.now();
 
@@ -998,7 +1112,8 @@ class RawWaterReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         await NotificationService.to.sendNotification(
           title: 'إجراء تصحيحي معتمد من الجودة وبانتظار قرار مدير المصنع',
-          body: 'اعتمد $qmFull الإجراء التصحيحي للتقرير رقم (${log.batchNumber}) وتم رفعه لمدير المصنع للقرار النهائي.',
+          body:
+              'اعتمد $qmFull الإجراء التصحيحي للتقرير رقم (${log.batchNumber}) وتم رفعه لمدير المصنع للقرار النهائي.',
           reportId: log.id,
           reportCategory: 'Raw Water',
           targetRole: 'FactoryManager',
@@ -1018,7 +1133,12 @@ class RawWaterReportDisplayController extends GetxController {
         duration: const Duration(seconds: 3),
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل اعتماد الإجراء التصحيحي: $e', backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل اعتماد الإجراء التصحيحي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     } finally {
       isLoading.value = false;
     }
@@ -1048,9 +1168,10 @@ class RawWaterReportDisplayController extends GetxController {
 
     try {
       isLoading.value = true;
-      final qmName = session.currentUserName.value.isNotEmpty
-          ? session.currentUserName.value
-          : 'مدير الجودة';
+      final qmName =
+          session.currentUserName.value.isNotEmpty
+              ? session.currentUserName.value
+              : 'مدير الجودة';
       final qmFull = '$qmName (مدير الجودة)';
 
       if (Get.isRegistered<WaterQualityApiService>()) {
@@ -1081,7 +1202,8 @@ class RawWaterReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         await NotificationService.to.sendNotification(
           title: 'مدير الجودة يرفض الإجراء التصحيحي للتعديل',
-          body: 'رفض $qmFull الإجراء التصحيحي للتقرير رقم (${log.batchNumber}) وطلب تعديله: $notes',
+          body:
+              'رفض $qmFull الإجراء التصحيحي للتقرير رقم (${log.batchNumber}) وطلب تعديله: $notes',
           reportId: log.id,
           reportCategory: 'Raw Water',
           targetRole: 'QualitySpecialist',
@@ -1101,7 +1223,12 @@ class RawWaterReportDisplayController extends GetxController {
         duration: const Duration(seconds: 3),
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل رفض الإجراء التصحيحي: $e', backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل رفض الإجراء التصحيحي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     } finally {
       isLoading.value = false;
     }
@@ -1131,9 +1258,10 @@ class RawWaterReportDisplayController extends GetxController {
 
     try {
       isLoading.value = true;
-      final gmName = session.currentUserName.value.isNotEmpty
-          ? session.currentUserName.value
-          : 'مدير المصنع';
+      final gmName =
+          session.currentUserName.value.isNotEmpty
+              ? session.currentUserName.value
+              : 'مدير المصنع';
       final gmFull = '$gmName (مدير المصنع)';
 
       if (Get.isRegistered<WaterQualityApiService>()) {
@@ -1164,7 +1292,8 @@ class RawWaterReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         await NotificationService.to.sendNotification(
           title: 'رفض قطعي للإجراء التصحيحي وإغلاق التقرير',
-          body: 'رفض $gmFull الإجراء التصحيحي للتقرير رقم (${log.batchNumber}) وتم إغلاق التقرير بالرفض النهائي. السبب: $notes',
+          body:
+              'رفض $gmFull الإجراء التصحيحي للتقرير رقم (${log.batchNumber}) وتم إغلاق التقرير بالرفض النهائي. السبب: $notes',
           reportId: log.id,
           reportCategory: 'Raw Water',
           targetRole: 'All',
@@ -1184,7 +1313,12 @@ class RawWaterReportDisplayController extends GetxController {
         duration: const Duration(seconds: 3),
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل رفض الإجراء التصحيحي: $e', backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل رفض الإجراء التصحيحي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     } finally {
       isLoading.value = false;
     }
@@ -1215,13 +1349,15 @@ class RawWaterReportDisplayController extends GetxController {
 
     try {
       isLoading.value = true;
-      final gmName = session.currentUserName.value.isNotEmpty
-          ? session.currentUserName.value
-          : 'مدير المصنع';
+      final gmName =
+          session.currentUserName.value.isNotEmpty
+              ? session.currentUserName.value
+              : 'مدير المصنع';
       final gmFull = '$gmName (مدير المصنع)';
 
       final bool hasPendingMicro = log.microResultsPending;
-      final String targetStatus = hasPendingMicro ? 'Awaiting_Micro_Results' : 'Closed';
+      final String targetStatus =
+          hasPendingMicro ? 'Awaiting_Micro_Results' : 'Closed';
       final now = DateTime.now();
 
       if (Get.isRegistered<WaterQualityApiService>()) {
@@ -1255,7 +1391,8 @@ class RawWaterReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         await NotificationService.to.sendNotification(
           title: 'اعتماد الإجراء التصحيحي وإغلاق التقرير',
-          body: 'اعتمد $gmFull الإجراء التصحيحي للتقرير رقم (${log.batchNumber}) وتم إغلاقه نهائياً.',
+          body:
+              'اعتمد $gmFull الإجراء التصحيحي للتقرير رقم (${log.batchNumber}) وتم إغلاقه نهائياً.',
           reportId: log.id,
           reportCategory: 'Raw Water',
           targetRole: 'All',
@@ -1275,7 +1412,12 @@ class RawWaterReportDisplayController extends GetxController {
         duration: const Duration(seconds: 3),
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل اعتماد الإجراء التصحيحي: $e', backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل اعتماد الإجراء التصحيحي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     } finally {
       isLoading.value = false;
     }
@@ -1284,7 +1426,10 @@ class RawWaterReportDisplayController extends GetxController {
   /// رفع الإجراء التصحيحي المنفَّذ إلى مدير الجودة للمراجعة والاعتماد
   Future<void> submitCorrectiveAction([String? notes]) async {
     final session = UserSessionService.to;
-    if (!session.canEditReports && !session.canCreateWaterReports && !session.canRejectReports && !session.isAdmin) {
+    if (!session.canEditReports &&
+        !session.canCreateWaterReports &&
+        !session.canRejectReports &&
+        !session.isAdmin) {
       Get.snackbar(
         'غير مصرح',
         'لا تملك صلاحية رفع الإجراء التصحيحي في حسابك الحالي',
@@ -1296,11 +1441,15 @@ class RawWaterReportDisplayController extends GetxController {
 
     try {
       isLoading.value = true;
-      final submitterName = session.currentUserName.value.isNotEmpty
-          ? session.currentUserName.value
-          : session.roleTitle;
+      final submitterName =
+          session.currentUserName.value.isNotEmpty
+              ? session.currentUserName.value
+              : session.roleTitle;
 
-      final effectiveNotes = (notes != null && notes.trim().isNotEmpty) ? notes.trim() : (log.correctiveAction ?? 'تم إنجاز الإجراء التصحيحي');
+      final effectiveNotes =
+          (notes != null && notes.trim().isNotEmpty)
+              ? notes.trim()
+              : (log.correctiveAction ?? 'تم إنجاز الإجراء التصحيحي');
 
       if (Get.isRegistered<WaterQualityApiService>()) {
         try {
@@ -1324,7 +1473,8 @@ class RawWaterReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         await NotificationService.to.sendNotification(
           title: 'إجراء تصحيحي بانتظار اعتماد مدير الجودة',
-          body: 'قام $submitterName بتوثيق ورفع الإجراء التصحيحي للتقرير رقم (${log.batchNumber}) وهو بانتظار مراجعتك واعتمادك.',
+          body:
+              'قام $submitterName بتوثيق ورفع الإجراء التصحيحي للتقرير رقم (${log.batchNumber}) وهو بانتظار مراجعتك واعتمادك.',
           reportId: log.id,
           reportCategory: 'Raw Water',
           targetRole: 'QualityManager',
@@ -1344,7 +1494,12 @@ class RawWaterReportDisplayController extends GetxController {
         duration: const Duration(seconds: 3),
       );
     } catch (e) {
-      Get.snackbar('خطأ', 'فشل رفع الإجراء التصحيحي: $e', backgroundColor: Colors.redAccent, colorText: Colors.white);
+      Get.snackbar(
+        'خطأ',
+        'فشل رفع الإجراء التصحيحي: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     } finally {
       isLoading.value = false;
     }
@@ -1365,6 +1520,7 @@ class RawWaterReportDisplayController extends GetxController {
       microGmSignatureBytes: microGmSignatureBytes.value,
     );
   }
+
   String getStandardString(int parameterId) {
     final std = standards[parameterId];
     if (std == null) return '';

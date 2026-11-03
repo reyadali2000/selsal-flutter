@@ -1008,8 +1008,9 @@ class DatabaseHelper {
     if (productId != null) {
       final result = await db.query(
         'QualityStandards',
-        where: 'product_id = ? AND water_type = ?',
+        where: '(product_id = ? OR product_id IS NULL) AND water_type = ?',
         whereArgs: [productId, waterType],
+        orderBy: 'id ASC',
       );
       return result.map((json) => QualityStandard.fromJson(json)).toList();
     } else {
@@ -1017,9 +1018,24 @@ class DatabaseHelper {
         'QualityStandards',
         where: 'product_id IS NULL AND water_type = ?',
         whereArgs: [waterType],
+        orderBy: 'id ASC',
       );
       return result.map((json) => QualityStandard.fromJson(json)).toList();
     }
+  }
+
+  Future<void> syncProducts(List<Product> productsList) async {
+    if (productsList.isEmpty) return;
+    final db = await instance.database;
+    final batch = db.batch();
+    for (final p in productsList) {
+      batch.insert(
+        'Products',
+        p.toJson(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
   }
 
   Future<void> syncTestParameters(List<TestParameter> params) async {
@@ -1036,18 +1052,30 @@ class DatabaseHelper {
     await batch.commit(noResult: true);
   }
 
-  Future<void> syncQualityStandards(List<QualityStandard> standardsList) async {
+  Future<void> syncQualityStandards(
+    List<QualityStandard> standardsList, {
+    String? waterType,
+  }) async {
     if (standardsList.isEmpty) return;
     final db = await instance.database;
-    final batch = db.batch();
-    for (final s in standardsList) {
-      batch.insert(
-        'QualityStandards',
-        s.toJson(),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
-    await batch.commit(noResult: true);
+    await db.transaction((txn) async {
+      if (waterType != null && waterType.isNotEmpty) {
+        await txn.delete(
+          'QualityStandards',
+          where: 'water_type = ?',
+          whereArgs: [waterType],
+        );
+      }
+      final batch = txn.batch();
+      for (final s in standardsList) {
+        batch.insert(
+          'QualityStandards',
+          s.toJson(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   // =====================================
@@ -1121,7 +1149,7 @@ class DatabaseHelper {
         if (paramCheck.isEmpty) {
           await txn.insert('TestParameters', {
             'id': result.parameterId,
-            'name_ar': 'معيار ',
+            'name_ar': 'معيار #${result.parameterId}',
             'category': 'General',
           }, conflictAlgorithm: ConflictAlgorithm.ignore);
         }
@@ -1230,7 +1258,7 @@ class DatabaseHelper {
         if (paramCheck.isEmpty) {
           await txn.insert('TestParameters', {
             'id': result.parameterId,
-            'name_ar': 'معيار ',
+            'name_ar': 'معيار #${result.parameterId}',
             'category': 'Microbiological',
           }, conflictAlgorithm: ConflictAlgorithm.ignore);
         }

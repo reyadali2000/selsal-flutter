@@ -120,7 +120,7 @@ class UISideMenuState extends State<UISideMenu> {
           ? widget.maxMenuWidth
           : size.width * 0.70;
       return Matrix4.identity()
-        ..translateByDouble(menuWidth * widget._inverse, 0.0, 0.0, 1.0);
+        ..translate(menuWidth * widget._inverse, 0.0, 0.0);
     }
     return Matrix4.identity();
   }

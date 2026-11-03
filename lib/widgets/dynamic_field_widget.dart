@@ -152,7 +152,6 @@ class DynamicFieldWidget extends StatelessWidget {
             label: '',
             hint: field.hint ?? 'اكتب ملاحظتك هنا...',
             validator: (val) => DynamicValidationHelper.validate(field, val),
-            // ignore: deprecated_member_use
             onChanged: (val) => onChanged(val),
           ),
         ],
@@ -249,9 +248,7 @@ class DynamicFieldWidget extends StatelessWidget {
           return RadioListTile<String>(
             title: Text(option, style: const TextStyle(fontFamily: AppTheme.fontFamily)),
             value: option,
-            // ignore: deprecated_member_use
             groupValue: initialValue?.toString(),
-            // ignore: deprecated_member_use
             onChanged: (val) => onChanged(val),
           );
         }),

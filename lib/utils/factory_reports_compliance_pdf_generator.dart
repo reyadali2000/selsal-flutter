@@ -25,26 +25,25 @@ class FactoryReportsCompliancePdfGenerator {
     // تحميل الترويسة والخطوط العربية
     pw.MemoryImage? headerImage;
     try {
-      final ByteData data =
-          await rootBundle.load('assets/images/selsal_pdf_header.png');
+      final ByteData data = await rootBundle.load(
+        'assets/images/selsal_pdf_header.png',
+      );
       headerImage = pw.MemoryImage(data.buffer.asUint8List());
     } catch (_) {}
 
-    final ByteData fontData =
-        await rootBundle.load('assets/fonts/Tajawal-Regular.ttf');
+    final ByteData fontData = await rootBundle.load(
+      'assets/fonts/Tajawal-Regular.ttf',
+    );
     final ttf = pw.Font.ttf(fontData);
 
-    final ByteData fontBoldData =
-        await rootBundle.load('assets/fonts/Tajawal-Bold.ttf');
+    final ByteData fontBoldData = await rootBundle.load(
+      'assets/fonts/Tajawal-Bold.ttf',
+    );
     final ttfBold = pw.Font.ttf(fontBoldData);
 
-    final arabicTheme = pw.ThemeData.withFont(
-      base: ttf,
-      bold: ttfBold,
-    );
+    final arabicTheme = pw.ThemeData.withFont(base: ttf, bold: ttfBold);
 
-    final dateFormatted =
-        DateFormat('yyyy/MM/dd', 'en_US').format(report.date);
+    final dateFormatted = DateFormat('yyyy/MM/dd', 'en_US').format(report.date);
 
     pdf.addPage(
       pw.MultiPage(
@@ -54,30 +53,31 @@ class FactoryReportsCompliancePdfGenerator {
         margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         header: (context) => _buildPdfHeader(headerImage),
         footer: (context) => _buildPdfFooter(context, ttf),
-        build: (context) => [
-          pw.SizedBox(height: 4),
-          _buildReportTitle(dateFormatted, report.branchName, ttfBold),
-          pw.SizedBox(height: 8),
-          _buildKpiSummaryRow(report, ttfBold, ttf),
-          pw.SizedBox(height: 10),
-          _buildSectionHeader(
-            'أولاً: التقارير والفحوصات المنجزة وعدد مرات التكرار',
-            _primaryDark,
-            ttfBold,
-          ),
-          pw.SizedBox(height: 5),
-          _buildExecutedTable(report.executedReports, ttfBold, ttf),
-          pw.SizedBox(height: 10),
-          _buildSectionHeader(
-            'ثانياً: التقارير المتخلفة التي لم يقم بها المصنع اليوم',
-            report.missedReports.isNotEmpty ? _dangerText : _primaryDark,
-            ttfBold,
-          ),
-          pw.SizedBox(height: 5),
-          _buildMissedSection(report.missedReports, ttfBold, ttf),
-          pw.SizedBox(height: 12),
-          _buildSignaturesSection(printedBy, ttfBold, ttf),
-        ],
+        build:
+            (context) => [
+              pw.SizedBox(height: 4),
+              _buildReportTitle(dateFormatted, report.branchName, ttfBold),
+              pw.SizedBox(height: 8),
+              _buildKpiSummaryRow(report, ttfBold, ttf),
+              pw.SizedBox(height: 10),
+              _buildSectionHeader(
+                'أولاً: التقارير والفحوصات المنجزة وعدد مرات التكرار',
+                _primaryDark,
+                ttfBold,
+              ),
+              pw.SizedBox(height: 5),
+              _buildExecutedTable(report.executedReports, ttfBold, ttf),
+              pw.SizedBox(height: 10),
+              _buildSectionHeader(
+                'ثانياً: التقارير المتخلفة التي لم يقم بها المصنع اليوم',
+                report.missedReports.isNotEmpty ? _dangerText : _primaryDark,
+                ttfBold,
+              ),
+              pw.SizedBox(height: 5),
+              _buildMissedSection(report.missedReports, ttfBold, ttf),
+              pw.SizedBox(height: 12),
+              _buildSignaturesSection(printedBy, ttfBold, ttf),
+            ],
       ),
     );
 
@@ -124,8 +124,10 @@ class FactoryReportsCompliancePdfGenerator {
   }
 
   static pw.Widget _buildPdfFooter(pw.Context context, pw.Font font) {
-    final nowFormatted =
-        DateFormat('yyyy/MM/dd HH:mm', 'en_US').format(DateTime.now());
+    final nowFormatted = DateFormat(
+      'yyyy/MM/dd HH:mm',
+      'en_US',
+    ).format(DateTime.now());
     return pw.Container(
       margin: const pw.EdgeInsets.only(top: 8),
       padding: const pw.EdgeInsets.symmetric(vertical: 4),
@@ -137,7 +139,11 @@ class FactoryReportsCompliancePdfGenerator {
         children: [
           pw.Text(
             'وقت وتاريخ الطباعة: $nowFormatted',
-            style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey700),
+            style: pw.TextStyle(
+              font: font,
+              fontSize: 8,
+              color: PdfColors.grey700,
+            ),
           ),
           pw.Text(
             'نظام سلسال للرقابة وإدارة الجودة',
@@ -145,7 +151,11 @@ class FactoryReportsCompliancePdfGenerator {
           ),
           pw.Text(
             'صفحة ${context.pageNumber} من ${context.pagesCount}',
-            style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey700),
+            style: pw.TextStyle(
+              font: font,
+              fontSize: 8,
+              color: PdfColors.grey700,
+            ),
           ),
         ],
       ),
@@ -193,9 +203,10 @@ class FactoryReportsCompliancePdfGenerator {
     pw.Font fontBold,
     pw.Font font,
   ) {
-    final rateColor = rep.complianceRate >= 90
-        ? _successText
-        : (rep.complianceRate >= 75 ? _primaryTeal : _dangerText);
+    final rateColor =
+        rep.complianceRate >= 90
+            ? _successText
+            : (rep.complianceRate >= 75 ? _primaryTeal : _dangerText);
 
     return pw.Row(
       children: [
@@ -257,9 +268,7 @@ class FactoryReportsCompliancePdfGenerator {
   ) {
     final isDanger = color == _dangerText;
     final isSuccess = color == _successText;
-    final bg = isDanger
-        ? _dangerBg
-        : (isSuccess ? _successBg : _tableRowAlt);
+    final bg = isDanger ? _dangerBg : (isSuccess ? _successBg : _tableRowAlt);
 
     return pw.Expanded(
       child: pw.Container(
@@ -348,7 +357,11 @@ class FactoryReportsCompliancePdfGenerator {
         ),
         child: pw.Text(
           'تنبيه: لم يتم تسجيل أي فحص أو تقرير لهذا المصنع في هذا اليوم!',
-          style: pw.TextStyle(font: fontBold, fontSize: 8.5, color: _dangerText),
+          style: pw.TextStyle(
+            font: fontBold,
+            fontSize: 8.5,
+            color: _dangerText,
+          ),
         ),
       );
     }
@@ -379,48 +392,84 @@ class FactoryReportsCompliancePdfGenerator {
       children: [
         pw.TableRow(
           decoration: const pw.BoxDecoration(color: _tableHeaderBg),
-          children: headers.map((h) => pw.Container(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 4),
-            alignment: pw.Alignment.center,
-            child: pw.Text(
-              h,
-              style: pw.TextStyle(
-                font: fontBold,
-                fontSize: 7.5,
-                fontWeight: pw.FontWeight.bold,
-                color: _primaryDark,
-              ),
-            ),
-          )).toList(),
+          children:
+              headers
+                  .map(
+                    (h) => pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(
+                        horizontal: 3,
+                        vertical: 4,
+                      ),
+                      alignment: pw.Alignment.center,
+                      child: pw.Text(
+                        h,
+                        style: pw.TextStyle(
+                          font: fontBold,
+                          fontSize: 7.5,
+                          fontWeight: pw.FontWeight.bold,
+                          color: _primaryDark,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
         ),
         ...executed.asMap().entries.map((entry) {
           final i = entry.key + 1;
           final r = entry.value;
           final isEven = entry.key % 2 == 0;
 
-          final shiftsText = r.shiftsCovered.isNotEmpty
-              ? r.shiftsCovered.join(' ، ')
-              : 'وردية تشغيلية';
+          final shiftsText =
+              r.shiftsCovered.isNotEmpty
+                  ? r.shiftsCovered.join(' ، ')
+                  : 'وردية تشغيلية';
 
-          final timeText = r.lastExecutionTime != null
-              ? DateFormat('HH:mm', 'en_US').format(r.lastExecutionTime!)
-              : '-';
+          final timeText =
+              r.lastExecutionTime != null
+                  ? DateFormat('HH:mm', 'en_US').format(r.lastExecutionTime!)
+                  : '-';
 
-          final compText = r.nonCompliantCount == 0
-              ? 'مطابق 100%'
-              : '${r.compliantCount}/${r.executionCount} مطابق';
+          final compText =
+              r.nonCompliantCount == 0
+                  ? 'مطابق 100%'
+                  : '${r.compliantCount}/${r.executionCount} مطابق';
 
           return pw.TableRow(
-            decoration: pw.BoxDecoration(color: isEven ? _tableRowAlt : PdfColors.white),
+            decoration: pw.BoxDecoration(
+              color: isEven ? _tableRowAlt : PdfColors.white,
+            ),
             children: [
               _buildTableCell('$i', fontBold, align: pw.Alignment.center),
-              _buildTableCell(r.reportName, fontBold, align: pw.Alignment.centerRight),
-              _buildTableCell(r.departmentName, font, align: pw.Alignment.center),
-              _buildTableCell(r.sourceType.label, font, align: pw.Alignment.center),
-              _buildTableCell('${r.executionCount} مرات', fontBold, align: pw.Alignment.center, textColor: _primaryDark),
+              _buildTableCell(
+                r.reportName,
+                fontBold,
+                align: pw.Alignment.centerRight,
+              ),
+              _buildTableCell(
+                r.departmentName,
+                font,
+                align: pw.Alignment.center,
+              ),
+              _buildTableCell(
+                r.sourceType.label,
+                font,
+                align: pw.Alignment.center,
+              ),
+              _buildTableCell(
+                '${r.executionCount} مرات',
+                fontBold,
+                align: pw.Alignment.center,
+                textColor: _primaryDark,
+              ),
               _buildTableCell(shiftsText, font, align: pw.Alignment.center),
               _buildTableCell(timeText, font, align: pw.Alignment.center),
-              _buildTableCell(compText, fontBold, align: pw.Alignment.center, textColor: r.nonCompliantCount == 0 ? _successText : _dangerText),
+              _buildTableCell(
+                compText,
+                fontBold,
+                align: pw.Alignment.center,
+                textColor:
+                    r.nonCompliantCount == 0 ? _successText : _dangerText,
+              ),
             ],
           );
         }),
@@ -446,7 +495,11 @@ class FactoryReportsCompliancePdfGenerator {
           children: [
             pw.Text(
               'التزام كامل بنسبة 100% — لا توجد أية تقارير أو فحوصات متخلفة لهذا اليوم.',
-              style: pw.TextStyle(font: fontBold, fontSize: 8.2, color: _successText),
+              style: pw.TextStyle(
+                font: fontBold,
+                fontSize: 8.2,
+                color: _successText,
+              ),
             ),
           ],
         ),
@@ -473,19 +526,27 @@ class FactoryReportsCompliancePdfGenerator {
       children: [
         pw.TableRow(
           decoration: const pw.BoxDecoration(color: _dangerBg),
-          children: headers.map((h) => pw.Container(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            alignment: pw.Alignment.center,
-            child: pw.Text(
-              h,
-              style: pw.TextStyle(
-                font: fontBold,
-                fontSize: 7.5,
-                fontWeight: pw.FontWeight.bold,
-                color: _dangerText,
-              ),
-            ),
-          )).toList(),
+          children:
+              headers
+                  .map(
+                    (h) => pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 4,
+                      ),
+                      alignment: pw.Alignment.center,
+                      child: pw.Text(
+                        h,
+                        style: pw.TextStyle(
+                          font: fontBold,
+                          fontSize: 7.5,
+                          fontWeight: pw.FontWeight.bold,
+                          color: _dangerText,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
         ),
         ...missed.asMap().entries.map((entry) {
           final i = entry.key + 1;
@@ -494,11 +555,34 @@ class FactoryReportsCompliancePdfGenerator {
           return pw.TableRow(
             decoration: const pw.BoxDecoration(color: PdfColors.white),
             children: [
-              _buildTableCell('$i', fontBold, align: pw.Alignment.center, textColor: _dangerText),
-              _buildTableCell(r.reportName, fontBold, align: pw.Alignment.centerRight, textColor: _dangerText),
-              _buildTableCell(r.departmentName, font, align: pw.Alignment.center),
-              _buildTableCell(r.sourceType.label, font, align: pw.Alignment.center),
-              _buildTableCell('متخلّف — لم يُسجل طوال اليوم', fontBold, align: pw.Alignment.center, textColor: _dangerText),
+              _buildTableCell(
+                '$i',
+                fontBold,
+                align: pw.Alignment.center,
+                textColor: _dangerText,
+              ),
+              _buildTableCell(
+                r.reportName,
+                fontBold,
+                align: pw.Alignment.centerRight,
+                textColor: _dangerText,
+              ),
+              _buildTableCell(
+                r.departmentName,
+                font,
+                align: pw.Alignment.center,
+              ),
+              _buildTableCell(
+                r.sourceType.label,
+                font,
+                align: pw.Alignment.center,
+              ),
+              _buildTableCell(
+                'متخلّف — لم يُسجل طوال اليوم',
+                fontBold,
+                align: pw.Alignment.center,
+                textColor: _dangerText,
+              ),
             ],
           );
         }),
@@ -544,9 +628,19 @@ class FactoryReportsCompliancePdfGenerator {
             fontBold,
             font,
           ),
-          _buildSignBox('مدير قسم الجودة وسلامة الغذاء', 'معتمد ومراجع', fontBold, font),
+          _buildSignBox(
+            'مدير قسم الجودة وسلامة الغذاء',
+            'معتمد ومراجع',
+            fontBold,
+            font,
+          ),
           _buildSignBox('مدير المصنع', 'معتمد', fontBold, font),
-          _buildSignBox('اعتماد الإدارة العامة', 'ختم وتصديق رسمي', fontBold, font),
+          _buildSignBox(
+            'اعتماد الإدارة العامة',
+            'ختم وتصديق رسمي',
+            fontBold,
+            font,
+          ),
         ],
       ),
     );
@@ -572,12 +666,20 @@ class FactoryReportsCompliancePdfGenerator {
         pw.SizedBox(height: 10),
         pw.Text(
           '.......................................',
-          style: pw.TextStyle(font: font, fontSize: 6.5, color: PdfColors.grey500),
+          style: pw.TextStyle(
+            font: font,
+            fontSize: 6.5,
+            color: PdfColors.grey500,
+          ),
         ),
         pw.SizedBox(height: 2),
         pw.Text(
           name,
-          style: pw.TextStyle(font: font, fontSize: 6.8, color: PdfColors.grey800),
+          style: pw.TextStyle(
+            font: font,
+            fontSize: 6.8,
+            color: PdfColors.grey800,
+          ),
         ),
       ],
     );

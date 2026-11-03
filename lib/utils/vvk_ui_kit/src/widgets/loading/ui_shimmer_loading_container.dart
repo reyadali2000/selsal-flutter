@@ -71,7 +71,7 @@ class UIShimmerLoadingContainer extends StatelessWidget {
       layoutBuilder: (currentChild, previousChildren) {
         return Stack(
           alignment: Alignment.topCenter,
-          children: [...previousChildren, if (currentChild != null) currentChild],
+          children: [...previousChildren, if (currentChild != null) currentChild!],
         );
       },
       duration: const Duration(milliseconds: 300),
