@@ -1371,12 +1371,15 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
         ? (record.gmDecisionBy ?? record.rejectedBy ?? 'مدير المصنع')
         : (record.gmDecisionBy ?? record.gmApprovedBy ?? (isGmDone ? 'د. خالد العمري (مدير المصنع)' : '________________'));
 
+    final bool isThreeLevelQm = report.approvalType == 'three_level_qm';
+    final bool endsAtQm = isSingleLevel || isThreeLevelQm;
+
     final qsStatusText = isQsRejected
         ? 'مرفوض'
         : (effectiveQsDone ? 'معتمد' : 'بانتظار الاعتماد');
 
     final qmStatusText = isClosed
-        ? 'معتمد سابقاً'
+        ? (endsAtQm ? 'معتمد بعد إجراء تصحيحي' : 'معتمد سابقاً')
         : ((isQmRejected || wasQmRejected)
             ? 'مرفوض'
             : (wasQmApproved || isGmRejected
@@ -1438,7 +1441,11 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
       isApproved: effectiveQsDone && !isQsRejected,
     );
 
-    final qmHeader = _buildHeaderCell('مدير الجودة', ttfBold, subtitle: isClosed ? 'معتمد سابقاً' : null);
+    final qmHeader = _buildHeaderCell(
+      endsAtQm ? 'اعتماد مدير الجودة' : 'مدير الجودة',
+      ttfBold,
+      subtitle: isClosed ? (endsAtQm ? 'معتمد بعد إجراء تصحيحي' : 'معتمد سابقاً') : null,
+    );
     final qmCell = _buildSignatureCell(
       rawName: qmName,
       statusText: qmStatusText,
@@ -1451,8 +1458,10 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
           : ((isQmRejected || wasQmRejected) ? rejectedSignatureBytes : ((isQmDone || wasQmApproved) ? qmSignatureBytes : null)),
       signatureHash: qmSignatureHash,
       isRejected: (isQmRejected || wasQmRejected) && !isClosed,
-      isApproved: isQmDone && !isClosed && !(isQmRejected || wasQmRejected) && !wasQmApproved && !isGmRejected,
-      isVoided: isClosed || wasQmApproved || isGmRejected,
+      isApproved: endsAtQm
+          ? ((isQmDone || isClosed) && !(isQmRejected || wasQmRejected))
+          : (isQmDone && !isClosed && !(isQmRejected || wasQmRejected) && !wasQmApproved && !isGmRejected),
+      isVoided: (!endsAtQm && isClosed) || wasQmApproved || isGmRejected,
     );
 
     final gmHeader = _buildHeaderCell('اعتماد مدير المصنع', ttfBold, subtitle: isClosed ? 'معتمد بعد إجراء تصحيحي' : null);
@@ -1497,6 +1506,14 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
           2: const pw.FlexColumnWidth(1),
           3: const pw.FlexColumnWidth(1),
         };
+      } else if (isThreeLevelQm) {
+        headerCells = [qmReviewHeader, qsHeader, creatorHeader];
+        dataCells = [qmCell, qsCell, creatorCell];
+        columnWidths = {
+          0: const pw.FlexColumnWidth(1),
+          1: const pw.FlexColumnWidth(1),
+          2: const pw.FlexColumnWidth(1),
+        };
       } else if (isSingleLevel) {
         headerCells = [qmReviewHeader, creatorHeader];
         dataCells = [qmCell, creatorCell];
@@ -1513,6 +1530,14 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
           2: const pw.FlexColumnWidth(1),
         };
       }
+    } else if (isThreeLevelQm) {
+      headerCells = [qmHeader, qsHeader, creatorHeader];
+      dataCells = [qmCell, qsCell, creatorCell];
+      columnWidths = {
+        0: const pw.FlexColumnWidth(1),
+        1: const pw.FlexColumnWidth(1),
+        2: const pw.FlexColumnWidth(1),
+      };
     } else if (isSingleLevel) {
       headerCells = [qmHeader, creatorHeader];
       dataCells = [qmCell, creatorCell];

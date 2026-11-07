@@ -2879,11 +2879,21 @@ class DashboardView extends StatelessWidget {
                           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                           leading: CircleAvatar(
                             backgroundColor: isDynamic
-                                ? DynamicReportColorHelper.getColorByKey(item['icon']?.toString()).withValues(alpha: 0.12)
+                                ? DynamicReportColorHelper.getColorByKey(
+                                    item['icon']?.toString(),
+                                    item['report_id'] as int?,
+                                    item['title']?.toString(),
+                                  ).withValues(alpha: 0.12)
                                 : AppColors.primaryLightest,
                             child: Icon(
                               isDynamic ? DynamicReport.getIconData(item['icon']?.toString()) : Icons.science_outlined,
-                              color: isDynamic ? DynamicReportColorHelper.getColorByKey(item['icon']?.toString()) : AppColors.primaryDark,
+                              color: isDynamic
+                                  ? DynamicReportColorHelper.getColorByKey(
+                                      item['icon']?.toString(),
+                                      item['report_id'] as int?,
+                                      item['title']?.toString(),
+                                    )
+                                  : AppColors.primaryDark,
                             ),
                           ),
                           title: Text(

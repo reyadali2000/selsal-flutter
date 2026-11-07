@@ -140,7 +140,10 @@ class DynamicReportBuilderView extends StatelessWidget {
               )),
             const SizedBox(height: 16),
             Obx(() => DropdownButtonFormField<String>(
-              initialValue: controller.approvalType.value,
+              initialValue: ['three_level_qm', 'three_level', 'two_level', 'single_level', 'none']
+                      .contains(controller.approvalType.value)
+                  ? controller.approvalType.value
+                  : 'two_level',
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'مسار الاعتماد والتوقيعات *',
@@ -149,8 +152,12 @@ class DynamicReportBuilderView extends StatelessWidget {
               ),
               items: const [
                 DropdownMenuItem(
+                  value: 'three_level_qm',
+                  child: Text('اعتماد ثلاثي (مُعِد التقرير + مشرف الجودة + مدير الجودة)'),
+                ),
+                DropdownMenuItem(
                   value: 'three_level',
-                  child: Text('اعتماد ثلاثي (مشرف الجودة + مدير الجودة + مدير المصنع)'),
+                  child: Text('اعتماد كامل (مشرف الجودة + مدير الجودة + مدير المصنع)'),
                 ),
                 DropdownMenuItem(
                   value: 'two_level',
@@ -2038,10 +2045,14 @@ class DynamicReportBuilderView extends StatelessWidget {
 
     return Obx(() {
       final selectedKey = controller.selectedIcon.value;
+      final selectedHex = controller.selectedIconColorHex.value;
       final selectedIconData = DynamicReport.getIconData(selectedKey);
+      final activeColor = DynamicReportColorHelper.parseHexColor(selectedHex) ??
+          DynamicReportColorHelper.getColorByKey(selectedKey);
+      final activeHexStr = DynamicReportColorHelper.colorToHex(activeColor);
 
       return Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: isDark ? surfaceColor : Colors.grey.shade50,
           borderRadius: BorderRadius.circular(12),
@@ -2050,48 +2061,153 @@ class DynamicReportBuilderView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: DynamicReportColorHelper.getColorByKey(selectedKey),
-                  radius: 20,
-                  child: Icon(selectedIconData, color: Colors.white, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            // شريط المعاينة الحية للأيقونة واللون المختار
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: activeColor.withValues(alpha: isDark ? 0.16 : 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: activeColor.withValues(alpha: 0.45), width: 1.2),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Text(
-                        'الأيقونة الحالية: ${_getIconLabel(selectedKey)}',
-                        style: TextStyle(
-                          fontFamily: 'Tajawal',
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: inkColor,
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: activeColor,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: activeColor.withValues(alpha: 0.35),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
+                        child: Icon(selectedIconData, color: Colors.white, size: 24),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'انقر على أي أيقونة أدناه لتعيينها كأيقونة مميزة للتقرير',
-                        style: TextStyle(
-                          fontFamily: 'Tajawal',
-                          fontSize: 11,
-                          color: mutedColor,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  'الأيقونة: ${_getIconLabel(selectedKey)}',
+                                  style: TextStyle(
+                                    fontFamily: 'Tajawal',
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: inkColor,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: activeColor,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    activeHexStr,
+                                    style: const TextStyle(
+                                      fontFamily: 'Tajawal',
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'اختر شكل الأيقونة ولونها المميز لضمان عدم تشابه التقارير (أكثر من 64 لوناً)',
+                              softWrap: true,
+                              style: TextStyle(
+                                fontFamily: 'Tajawal',
+                                fontSize: 11,
+                                color: mutedColor,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => controller.suggestDistinctColor(),
+                        icon: Icon(Icons.auto_awesome_outlined, size: 16, color: activeColor),
+                        label: Text(
+                          'لون فريد غير مستخدم',
+                          style: TextStyle(
+                            fontFamily: 'Tajawal',
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: activeColor,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: activeColor),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _showCustomHexDialog(context, controller, activeHexStr),
+                        icon: Icon(Icons.colorize_outlined, size: 16, color: inkColor),
+                        label: Text(
+                          'كود لون #HEX',
+                          style: TextStyle(
+                            fontFamily: 'Tajawal',
+                            fontSize: 11,
+                            color: inkColor,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: borderColor),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
+            Text(
+              '1. اختر شكل الأيقونة (${_availableIcons.length} أيقونة):',
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: inkColor,
+              ),
+            ),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: _availableIcons.map((opt) {
                 final isSelected = opt.key == selectedKey;
-                final optColor = DynamicReportColorHelper.getColorByKey(opt.key);
+                final chipColor = isSelected
+                    ? activeColor
+                    : DynamicReportColorHelper.getColorByKey(opt.key);
                 return InkWell(
                   onTap: () => controller.selectedIcon.value = opt.key,
                   borderRadius: BorderRadius.circular(10),
@@ -2099,20 +2215,20 @@ class DynamicReportBuilderView extends StatelessWidget {
                     duration: const Duration(milliseconds: 150),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
-                      color: isSelected 
-                          ? optColor 
+                      color: isSelected
+                          ? activeColor
                           : (isDark ? surfaceColor : Colors.white),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: isSelected 
-                            ? optColor 
+                        color: isSelected
+                            ? activeColor
                             : (isDark ? borderColor : Colors.grey.shade300),
                         width: isSelected ? 1.5 : 1,
                       ),
                       boxShadow: isSelected
                           ? [
                               BoxShadow(
-                                color: optColor.withValues(alpha: 0.35),
+                                color: activeColor.withValues(alpha: 0.35),
                                 blurRadius: 6,
                                 offset: const Offset(0, 2),
                               )
@@ -2125,9 +2241,7 @@ class DynamicReportBuilderView extends StatelessWidget {
                         Icon(
                           opt.icon,
                           size: 18,
-                          color: isSelected 
-                              ? Colors.white 
-                              : optColor,
+                          color: isSelected ? Colors.white : chipColor,
                         ),
                         const SizedBox(width: 6),
                         Text(
@@ -2136,8 +2250,8 @@ class DynamicReportBuilderView extends StatelessWidget {
                             fontFamily: 'Tajawal',
                             fontSize: 11,
                             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            color: isSelected 
-                                ? Colors.white 
+                            color: isSelected
+                                ? Colors.white
                                 : (isDark ? Colors.grey.shade200 : Colors.black87),
                           ),
                         ),
@@ -2147,10 +2261,134 @@ class DynamicReportBuilderView extends StatelessWidget {
                 );
               }).toList(),
             ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(Icons.palette_outlined, size: 16, color: activeColor),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '2. اختر لون التقرير والأيقونة (${DynamicReportColorHelper.curatedPalette.length} لوناً مميزاً):',
+                    style: TextStyle(
+                      fontFamily: 'Tajawal',
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: inkColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 7,
+              runSpacing: 7,
+              children: List.generate(DynamicReportColorHelper.curatedPalette.length, (index) {
+                final paletteColor = DynamicReportColorHelper.curatedPalette[index];
+                final paletteHex = DynamicReportColorHelper.colorToHex(paletteColor);
+                final isColorSelected = paletteHex.toUpperCase() == activeHexStr.toUpperCase();
+
+                return Tooltip(
+                  message: 'لون رقم ${index + 1} ($paletteHex)',
+                  child: InkWell(
+                    onTap: () => controller.selectedIconColorHex.value = paletteHex,
+                    borderRadius: BorderRadius.circular(8),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 140),
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: paletteColor,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isColorSelected
+                              ? (isDark ? Colors.white : Colors.black87)
+                              : Colors.white.withValues(alpha: 0.35),
+                          width: isColorSelected ? 2.5 : 1,
+                        ),
+                        boxShadow: isColorSelected
+                            ? [
+                                BoxShadow(
+                                  color: paletteColor.withValues(alpha: 0.55),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: isColorSelected
+                          ? const Icon(Icons.check, size: 17, color: Colors.white)
+                          : null,
+                    ),
+                  ),
+                );
+              }),
+            ),
           ],
         ),
       );
     });
+  }
+
+  void _showCustomHexDialog(
+    BuildContext context,
+    DynamicReportBuilderController controller,
+    String currentHex,
+  ) {
+    final hexCtrl = TextEditingController(text: currentHex);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(
+          'إدخال كود لون مخصص (#HEX)',
+          style: TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold, fontSize: 15),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'أدخل كود اللون السداسي (مثال: #1E88E5 أو #D81B60):',
+              style: TextStyle(fontFamily: 'Tajawal', fontSize: 12),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: hexCtrl,
+              autofocus: true,
+              textDirection: TextDirection.ltr,
+              decoration: const InputDecoration(
+                hintText: '#1E88E5',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('إلغاء', style: TextStyle(fontFamily: 'Tajawal')),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final parsed = DynamicReportColorHelper.parseHexColor(hexCtrl.text);
+              if (parsed != null) {
+                controller.selectedIconColorHex.value =
+                    DynamicReportColorHelper.colorToHex(parsed);
+                Navigator.of(ctx).pop();
+              } else {
+                Get.snackbar(
+                  'تنبيه',
+                  'يرجى إدخال كود لون صحيح مكون من 6 خانات مثل #1E88E5',
+                  snackPosition: SnackPosition.BOTTOM,
+                );
+              }
+            },
+            child: const Text('تطبيق اللون', style: TextStyle(fontFamily: 'Tajawal')),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -2178,9 +2416,27 @@ const List<_ReportIconOption> _availableIcons = [
   _ReportIconOption(key: 'table_chart', label: 'جدول بيانات', icon: Icons.table_chart_outlined),
   _ReportIconOption(key: 'rule', label: 'معايير قياسية', icon: Icons.rule_outlined),
   _ReportIconOption(key: 'assessment', label: 'تقييم ومتابعة', icon: Icons.assessment_outlined),
+  _ReportIconOption(key: 'report_problem', label: 'عدم مطابقة / إنذار', icon: Icons.report_problem_outlined),
+  _ReportIconOption(key: 'build_circle', label: 'صيانة ومعايرة', icon: Icons.build_circle_outlined),
+  _ReportIconOption(key: 'thermostat', label: 'حرارة ورطوبة', icon: Icons.thermostat_outlined),
+  _ReportIconOption(key: 'pest_control', label: 'مكافحة آفات', icon: Icons.pest_control_outlined),
+  _ReportIconOption(key: 'checkroom', label: 'زي موحد وخزائن', icon: Icons.checkroom_outlined),
+  _ReportIconOption(key: 'local_shipping', label: 'شاحنات وتوريد', icon: Icons.local_shipping_outlined),
+  _ReportIconOption(key: 'warehouse', label: 'مستودعات وتخزين', icon: Icons.warehouse_outlined),
+  _ReportIconOption(key: 'recycling', label: 'مخلفات وبيئة', icon: Icons.recycling_outlined),
+  _ReportIconOption(key: 'local_drink', label: 'تعبئة وعبوات', icon: Icons.local_drink_outlined),
+  _ReportIconOption(key: 'speed', label: 'عدادات وضغط', icon: Icons.speed_outlined),
+  _ReportIconOption(key: 'engineering', label: 'فريق العمل والمهندسين', icon: Icons.engineering_outlined),
+  _ReportIconOption(key: 'medical_services', label: 'إسعافات أولية وطبابة', icon: Icons.medical_services_outlined),
+  _ReportIconOption(key: 'cleaning_services', label: 'غسيل وتعقيم (CIP)', icon: Icons.cleaning_services_outlined),
+  _ReportIconOption(key: 'bolt', label: 'طاقة وكهرباء', icon: Icons.bolt_outlined),
+  _ReportIconOption(key: 'qr_code_scanner', label: 'تتبع وباركود', icon: Icons.qr_code_scanner_outlined),
+  _ReportIconOption(key: 'wine_bar', label: 'زجاج ومواد قابلة للكسر', icon: Icons.wine_bar_outlined),
+  _ReportIconOption(key: 'school', label: 'تدريب وتأهيل', icon: Icons.school_outlined),
 ];
 
 String _getIconLabel(String key) {
-  final found = _availableIcons.where((opt) => opt.key == key);
+  final cleanKey = DynamicReportColorHelper.extractIconName(key);
+  final found = _availableIcons.where((opt) => opt.key == cleanKey);
   return found.isNotEmpty ? found.first.label : 'مستند قياسي';
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/dynamic_report_models.dart';
 import '../services/api/dynamic_reports_api_service.dart';
+import '../utils/dynamic_report_color_helper.dart';
 
 
 class DynamicReportBuilderController extends GetxController {
@@ -27,6 +28,7 @@ class DynamicReportBuilderController extends GetxController {
   var approvalType = 'two_level'.obs;
 
   var selectedIcon = 'description'.obs;
+  var selectedIconColorHex = ''.obs;
   var orientation = 'portrait'.obs;
 
   var showHeaderCreator = true.obs;
@@ -56,7 +58,52 @@ class DynamicReportBuilderController extends GetxController {
         _loadReport((Get.arguments as Map)['reportId'] as int);
       } else if (Get.arguments is DynamicReport && (Get.arguments as DynamicReport).id != null) {
         _loadReport((Get.arguments as DynamicReport).id!);
+      } else {
+        suggestDistinctColor();
       }
+    } else {
+      suggestDistinctColor();
+    }
+  }
+
+  /// اقتراح لون فريد غير مستخدم (أو الأقل استخداماً) في التقارير الموجودة حالياً
+  Future<void> suggestDistinctColor() async {
+    try {
+      final templates = await DynamicReportsApiService.to.getTemplates();
+      final usedHexCounts = <String, int>{};
+      for (final col in DynamicReportColorHelper.curatedPalette) {
+        usedHexCounts[DynamicReportColorHelper.colorToHex(col).toUpperCase()] = 0;
+      }
+
+      for (final t in templates) {
+        if (reportId.value != null && t.id == reportId.value) continue;
+        final c = DynamicReportColorHelper.getColor(t);
+        final hex = DynamicReportColorHelper.colorToHex(c).toUpperCase();
+        usedHexCounts[hex] = (usedHexCounts[hex] ?? 0) + 1;
+      }
+
+      // اختيار أول لون غير مستخدم، أو اللون الأقل استخداماً مع إزاحة عشوائية بسيطة لتجنب التكرار المتتالي
+      String? bestHex;
+      int minCount = 999999;
+      final offset = templates.length % DynamicReportColorHelper.curatedPalette.length;
+      final len = DynamicReportColorHelper.curatedPalette.length;
+      for (int i = 0; i < len; i++) {
+        final col = DynamicReportColorHelper.curatedPalette[(i + offset) % len];
+        final hex = DynamicReportColorHelper.colorToHex(col).toUpperCase();
+        final cnt = usedHexCounts[hex] ?? 0;
+        if (cnt < minCount) {
+          minCount = cnt;
+          bestHex = hex;
+          if (cnt == 0) break;
+        }
+      }
+
+      if (bestHex != null) {
+        selectedIconColorHex.value = bestHex;
+      }
+    } catch (_) {
+      final fallback = DynamicReportColorHelper.getDistinctColorForIndex(DateTime.now().second);
+      selectedIconColorHex.value = DynamicReportColorHelper.colorToHex(fallback);
     }
   }
 
@@ -93,7 +140,9 @@ class DynamicReportBuilderController extends GetxController {
         showHeaderDay.value = cfg.showDay;
         showHeaderLine.value = cfg.showLine;
 
-        selectedIcon.value = report.icon ?? 'description';
+        selectedIcon.value = DynamicReportColorHelper.extractIconName(report.icon);
+        selectedIconColorHex.value = DynamicReportColorHelper.extractCustomColorHex(report.icon) ??
+            DynamicReportColorHelper.colorToHex(DynamicReportColorHelper.getColor(report));
         orientation.value = report.orientation;
         if (report.orientation == 'portrait' &&
             (report.sections?.any((s) => s.fields?.any((f) => f.fieldType == 'table' && f.tableConfig?.isLandscape == true) ?? false) ?? false)) {
@@ -350,7 +399,10 @@ class DynamicReportBuilderController extends GetxController {
         versionNumber: versionNumberController.text.trim().isEmpty ? '01' : versionNumberController.text.trim(),
         issueDate: issueDateController.text.trim().isEmpty ? DateFormat('yyyy/MM/dd').format(DateTime.now()) : issueDateController.text.trim(),
         headerConfigJson: headerConfig.toJsonString(),
-        icon: selectedIcon.value,
+        icon: DynamicReportColorHelper.combineIconAndColor(
+          selectedIcon.value,
+          selectedIconColorHex.value,
+        ),
         orientation: orientation.value,
         isActive: true,
 

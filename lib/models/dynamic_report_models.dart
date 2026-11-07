@@ -263,6 +263,57 @@ class DynamicReport {
         return Icons.rule_outlined;
       case 'assessment':
         return Icons.assessment_outlined;
+      case 'report_problem':
+      case 'ncr':
+        return Icons.report_problem_outlined;
+      case 'build_circle':
+      case 'maintenance':
+        return Icons.build_circle_outlined;
+      case 'thermostat':
+      case 'temperature':
+        return Icons.thermostat_outlined;
+      case 'pest_control':
+      case 'bug':
+        return Icons.pest_control_outlined;
+      case 'checkroom':
+      case 'locker':
+        return Icons.checkroom_outlined;
+      case 'local_shipping':
+      case 'truck':
+        return Icons.local_shipping_outlined;
+      case 'warehouse':
+      case 'storage':
+        return Icons.warehouse_outlined;
+      case 'recycling':
+      case 'waste':
+        return Icons.recycling_outlined;
+      case 'local_drink':
+      case 'bottle':
+        return Icons.local_drink_outlined;
+      case 'speed':
+      case 'gauge':
+        return Icons.speed_outlined;
+      case 'engineering':
+      case 'workers':
+        return Icons.engineering_outlined;
+      case 'medical_services':
+      case 'first_aid':
+        return Icons.medical_services_outlined;
+      case 'cleaning_services':
+      case 'cleaning':
+        return Icons.cleaning_services_outlined;
+      case 'bolt':
+      case 'energy':
+        return Icons.bolt_outlined;
+      case 'qr_code_scanner':
+      case 'traceability':
+        return Icons.qr_code_scanner_rounded;
+      case 'wine_bar':
+      case 'glass':
+        return Icons.wine_bar_outlined;
+      case 'school':
+      case 'training':
+        return Icons.school_outlined;
       case 'description':
       default:
         return Icons.description_outlined;
@@ -271,6 +322,17 @@ class DynamicReport {
 
   IconData get iconData => getIconData(icon);
   DynamicReportHeaderConfig get headerConfig => DynamicReportHeaderConfig.fromJsonString(headerConfigJson);
+
+  /// دورة اعتماد ثلاثية تنتهي بمدير الجودة (مُعِد + مشرف الجودة + مدير الجودة)
+  bool get isThreeLevelQm => approvalType == 'three_level_qm';
+  /// دورة اعتماد كاملة رباعية (مُعِد + مشرف الجودة + مدير الجودة + مدير المصنع)
+  bool get isThreeLevel => approvalType == 'three_level';
+  /// دورة اعتماد ثنائية (مدير الجودة + مدير المصنع)
+  bool get isTwoLevel => approvalType == 'two_level';
+  /// دورة اعتماد أحادية (مدير الجودة فقط)
+  bool get isSingleLevel => approvalType == 'single_level';
+  /// هل يتطلب التقرير دورة اعتماد
+  bool get hasApproval => approvalType != 'none';
 }
 
 class DynamicReportSection {

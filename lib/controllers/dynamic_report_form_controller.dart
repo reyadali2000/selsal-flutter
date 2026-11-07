@@ -549,7 +549,8 @@ class DynamicReportFormController extends GetxController {
       final userName = currentInspectorName;
 
       final bool requiresApproval = report.value?.approvalType != 'none';
-      final bool isThreeLevel = report.value?.approvalType == 'three_level';
+      final bool isThreeLevel = report.value?.approvalType == 'three_level' ||
+          report.value?.approvalType == 'three_level_qm';
         
       String initialApprovalStatus = requiresApproval 
           ? (isThreeLevel ? 'Pending_QS' : 'Pending_QM') 

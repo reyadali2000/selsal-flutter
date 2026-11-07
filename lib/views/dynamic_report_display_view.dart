@@ -471,7 +471,9 @@ class DynamicReportDisplayController extends GetxController {
         '';
     final userId = session.currentUser.value?.id;
 
-    final isSingleLevel = report.value?.approvalType == 'single_level';
+    final isSingleLevel =
+        report.value?.approvalType == 'single_level' ||
+        report.value?.approvalType == 'three_level_qm';
     final nextStatus = isSingleLevel ? 'Approved' : 'Pending_GM';
     final curSt = currentRecord.value?.approvalStatus ?? '';
     if (!ApprovalStatus.canTransition(curSt, nextStatus)) {
@@ -672,7 +674,9 @@ class DynamicReportDisplayController extends GetxController {
         '${session.currentUserName.value} (${session.roleTitle})';
     final userId = session.currentUser.value?.id;
     final curCount = currentRecord.value?.rejectionCount ?? 0;
-    final isSingleLevel = report.value?.approvalType == 'single_level';
+    final isSingleLevel =
+        report.value?.approvalType == 'single_level' ||
+        report.value?.approvalType == 'three_level_qm';
     final int newCount;
     final String newStatus;
 
@@ -780,7 +784,9 @@ class DynamicReportDisplayController extends GetxController {
             : 'مدير الجودة';
     final qmFull = '$qmName (مدير الجودة)';
     final userId = session.currentUser.value?.id;
-    final isSingleLevel = report.value?.approvalType == 'single_level';
+    final isSingleLevel =
+        report.value?.approvalType == 'single_level' ||
+        report.value?.approvalType == 'three_level_qm';
     final targetStatus = isSingleLevel ? 'Closed' : 'Pending_GM_Decision';
     final now = DateTime.now();
 
@@ -871,7 +877,9 @@ class DynamicReportDisplayController extends GetxController {
             : 'مدير الجودة';
     final qmFull = '$qmName (مدير الجودة)';
     final userId = session.currentUser.value?.id;
-    final isSingleLevel = report.value?.approvalType == 'single_level';
+    final isSingleLevel =
+        report.value?.approvalType == 'single_level' ||
+        report.value?.approvalType == 'three_level_qm';
     final curCount = currentRecord.value?.rejectionCount ?? 0;
     final bool isDefinitive = curCount >= 1 || isSingleLevel;
     final int newCount = isDefinitive ? (curCount < 2 ? 2 : curCount + 1) : 1;
@@ -1635,7 +1643,12 @@ class DynamicReportDisplayView extends StatelessWidget {
     DynamicReportDisplayController controller,
     DynamicReportRecord record,
   ) {
-    final isThreeLevel = controller.report.value?.approvalType == 'three_level';
+    final isThreeLevel =
+        controller.report.value?.approvalType == 'three_level' ||
+        controller.report.value?.approvalType == 'three_level_qm';
+    final endsAtQm =
+        controller.report.value?.approvalType == 'single_level' ||
+        controller.report.value?.approvalType == 'three_level_qm';
     final bool isClosed = record.approvalStatus == 'Closed';
     final wasQsApproved = ApprovalStatus.wasApprovedByQsPriorToRejection(
       qsApprovedBy: record.qsApprovedBy,
@@ -1772,7 +1785,9 @@ class DynamicReportDisplayView extends StatelessWidget {
                 child: _buildSignatureBoxUI(
                   roleTitle:
                       isClosed
-                          ? 'مدير الجودة (معتمد سابقاً)'
+                          ? (endsAtQm
+                              ? 'اعتماد مدير الجودة (بعد إجراء تصحيحي)'
+                              : 'مدير الجودة (معتمد سابقاً)')
                           : (wasQmApproved
                               ? 'اعتماد مدير الجودة (سابقاً)'
                               : 'اعتماد مدير الجودة'),
@@ -1800,9 +1815,10 @@ class DynamicReportDisplayView extends StatelessWidget {
                               : (isQmDone || wasQmApproved
                                   ? 'معتمد'
                                   : (isQmRejected ? 'مرفوض' : 'لم يعتمد بعد'))),
-                  isApproved: isQmDone && !isClosed,
+                  isApproved:
+                      endsAtQm ? (isQmDone || isClosed) : (isQmDone && !isClosed),
                   isRejected: (isQmRejected || wasQmRejected) && !isClosed,
-                  isVoided: isClosed || wasQmApproved,
+                  isVoided: (!endsAtQm && isClosed) || wasQmApproved,
                   signatureBytes:
                       isClosed
                           ? controller.qmSignatureBytes.value
@@ -1813,7 +1829,7 @@ class DynamicReportDisplayView extends StatelessWidget {
                                   : null)),
                 ),
               ),
-              if (controller.report.value?.approvalType != 'single_level') ...[
+              if (!endsAtQm) ...[
                 const SizedBox(width: 8),
                 Expanded(
                   child: _buildSignatureBoxUI(
@@ -2230,7 +2246,9 @@ class DynamicReportDisplayView extends StatelessWidget {
                         : () {
                           final isSingle =
                               controller.report.value?.approvalType ==
-                              'single_level';
+                                  'single_level' ||
+                              controller.report.value?.approvalType ==
+                                  'three_level_qm';
                           _confirmApproval(
                             context,
                             title: 'اعتماد مدير الجودة',
@@ -2316,14 +2334,15 @@ class DynamicReportDisplayView extends StatelessWidget {
     }
 
     if (status == 'Pending_GM') {
-      if (controller.report.value?.approvalType == 'single_level') {
+      if (controller.report.value?.approvalType == 'single_level' ||
+          controller.report.value?.approvalType == 'three_level_qm') {
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.verified, color: Color(0xFF2E7D32), size: 18),
             const SizedBox(width: 8),
             const Text(
-              'التقرير معتمد (مسار اعتماد أحادي) ولا يتطلب اعتماد مدير المصنع.',
+              'التقرير معتمد نهائياً من مدير الجودة ولا يتطلب اعتماد مدير المصنع.',
               style: TextStyle(
                 fontFamily: 'Tajawal',
                 fontWeight: FontWeight.bold,
@@ -2617,7 +2636,8 @@ class DynamicReportDisplayView extends StatelessWidget {
     final status = record.approvalStatus;
     final isQmStage = status == 'Pending_QM_Decision';
     final isSingleLevel =
-        controller.report.value?.approvalType == 'single_level';
+        controller.report.value?.approvalType == 'single_level' ||
+        controller.report.value?.approvalType == 'three_level_qm';
 
     final decision = await GmDecisionDialog.show(
       Get.context!,
