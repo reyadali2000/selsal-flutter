@@ -61,9 +61,13 @@ class DynamicReportBuilderController extends GetxController {
   }
 
   Future<void> _loadCategories() async {
-    categories.value = await DynamicReportsApiService.to.getCategories();
-    if (categories.isNotEmpty && categoryId.value == null) {
-      categoryId.value = categories.first.id;
+    try {
+      categories.value = await DynamicReportsApiService.to.getCategories();
+      if (categories.isNotEmpty && categoryId.value == null) {
+        categoryId.value = categories.first.id;
+      }
+    } catch (e) {
+      debugPrint('Failed to load report categories: $e');
     }
   }
 
@@ -113,6 +117,20 @@ class DynamicReportBuilderController extends GetxController {
 
   /// إضافة قسم "بيانات التشغيل" القياسية بحقوله المجهزة تلقائياً (تاريخ، يوم، خط، وردية)
   void addOperatingInfoSection() {
+    // منع التكرار: مفاتيح هذه الحقول ثابتة ويجب أن تكون فريدة داخل التقرير
+    const reservedKeys = {'report_date', 'day_name', 'line_number', 'shift'};
+    if (fields.any((f) => reservedKeys.contains(f.fieldKey))) {
+      Get.snackbar(
+        'تنبيه',
+        'قسم "بيانات التشغيل" (أو أحد حقوله) موجود مسبقاً في هذا التقرير',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.orange.shade700,
+        colorText: Colors.white,
+        margin: const EdgeInsets.all(12),
+      );
+      return;
+    }
+
     final repId = reportId.value ?? 0;
 
     // 1. إنشاء القسم
@@ -230,10 +248,8 @@ class DynamicReportBuilderController extends GetxController {
     sections.refresh();
   }
 
+  /// [newIndex] is already adjusted for the removed item (onReorderItem semantics).
   void reorderSection(int oldIndex, int newIndex) {
-    if (oldIndex < newIndex) {
-      newIndex -= 1;
-    }
     final section = sections.removeAt(oldIndex);
     sections.insert(newIndex, section);
     // Update sortOrder for all
@@ -262,9 +278,7 @@ class DynamicReportBuilderController extends GetxController {
     final sectionFields = fields.where((f) => f.sectionId == sectionId).toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
-    if (oldIndex < newIndex) {
-      newIndex -= 1;
-    }
+    // newIndex is already adjusted for the removed item (onReorderItem semantics).
     final field = sectionFields.removeAt(oldIndex);
     sectionFields.insert(newIndex, field);
 
@@ -289,7 +303,20 @@ class DynamicReportBuilderController extends GetxController {
   }
 
   Future<void> saveReport() async {
-    if (!formKey.currentState!.validate()) return;
+    // منع الحفظ المزدوج أو الحفظ أثناء التحميل (النموذج غير معروض حينها)
+    if (isLoading.value) return;
+    final form = formKey.currentState;
+    if (form == null || !form.validate()) return;
+
+    // القسم إلزامي: إن لم تُحمَّل الأقسام نحاول مرة أخرى قبل الرفض
+    if (categoryId.value == null) {
+      if (categories.isEmpty) await _loadCategories();
+      if (categoryId.value == null) {
+        Get.snackbar('خطأ', 'يجب اختيار القسم الذي يظهر فيه التقرير. تأكد من الاتصال بالخادم ثم أعد المحاولة');
+        return;
+      }
+    }
+
     if (sections.isEmpty) {
       Get.snackbar('خطأ', 'يجب إضافة قسم واحد على الأقل');
       return;

@@ -46,6 +46,11 @@ class SyncQueue {
         isMatch = true;
       } else if (bodyJson != null && existingBody != null && bodyJson == existingBody) {
         isMatch = true;
+      } else if (body is Map && body['client_uuid'] != null && existingBody != null) {
+        final clientUuid = body['client_uuid'].toString();
+        if (clientUuid.isNotEmpty && existingBody.contains(clientUuid)) {
+          isMatch = true;
+        }
       }
 
       if (isMatch) {
@@ -117,14 +122,12 @@ class SyncQueue {
     } catch (_) {}
   }
 
-  /// جلب العمليات المعلّقة الجاهزة للإرسال (للقراءة فقط).
+  /// جلب العمليات المعلّقة (للعرض في الواجهة).
   Future<List<Map<String, dynamic>>> getPending({int limit = 20}) async {
     final db = await _db;
-    final now = DateTime.now().toIso8601String();
     return await db.query(
       table,
-      where: "status = 'pending' AND next_retry_at <= ?",
-      whereArgs: [now],
+      where: "status IN ('pending', 'processing')",
       orderBy: 'created_at ASC',
       limit: limit,
     );
@@ -145,12 +148,33 @@ class SyncQueue {
 
   /// فشل العملية → تُحفظ مع زيادة المحاولات وتأخير الإعادة (exponential backoff).
   /// بعد [maxAttempts] محاولات تُعلّم كـ 'failed' لتبقى للمراجعة اليدوية.
-  Future<void> markFailed(int id, String error, {int maxAttempts = 5}) async {
+  Future<void> markFailed(int id, String error, {bool isNetworkError = false, int maxAttempts = 5}) async {
     final db = await _db;
     final rows = await db.query(table, where: 'id = ?', whereArgs: [id]);
     if (rows.isEmpty) return;
 
-    final attempts = (rows.first['attempts'] as int? ?? 0) + 1;
+    final currentAttempts = rows.first['attempts'] as int? ?? 0;
+
+    // أخطاء الشبكة المؤقتة (انقطاع الاتصال / انتهاء المهلة) لا تُحسب ضمن الحد الأقصى للمحاولات،
+    // لضمان عدم وسم تقارير المستخدم كـ 'failed' نهائياً بسبب انقطاع الإنترنت أو توقف السيرفر.
+    if (isNetworkError) {
+      final backoffStep = (currentAttempts < 8) ? currentAttempts : 8;
+      final delaySeconds = (1 << backoffStep).clamp(2, 300);
+      final nextRetry = DateTime.now().add(Duration(seconds: delaySeconds)).toIso8601String();
+      await db.update(
+        table,
+        {
+          'status': 'pending',
+          'last_error': error,
+          'next_retry_at': nextRetry,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      return;
+    }
+
+    final attempts = currentAttempts + 1;
 
     if (attempts >= maxAttempts) {
       await db.update(
@@ -181,8 +205,45 @@ class SyncQueue {
 
   /// تنظيف السجلات الفاشلة القديمة (أقدم من 30 يوماً) لمنع تضخّم الجدول.
   Future<void> purgeOldEntries() async {
+    // تم إيقاف الحذف التلقائي للسجلات الفاشلة حفاظاً على بيانات المستخدم
+    // ولإتاحة استعادتها أو مراجعتها يدوياً.
+  }
+
+  /// تحديث معرف كيان كان محلياً سالباً بعد نجاح مزامنته وحصوله على معرف سيرفر جديد،
+  /// وتحديث كافة الطلبات المعلّقة في الطابور التي تشير إلى هذا الكيان أو مساره.
+  Future<void> remapEntityId({
+    required String entityType,
+    required int oldLocalId,
+    required int newServerId,
+  }) async {
     final db = await _db;
-    final cutoff = DateTime.now().subtract(const Duration(days: 30)).toIso8601String();
-    await db.delete(table, where: "status = 'failed' AND created_at < ?", whereArgs: [cutoff]);
+    final oldPathSegment = '//';
+    final newPathSegment = '//';
+    final oldEndSegment = '/';
+    final newEndSegment = '/';
+
+    await db.transaction((txn) async {
+      await txn.rawUpdate(
+        'UPDATE  SET entity_id = ? WHERE entity_type = ? AND entity_id = ?',
+        [newServerId, entityType, oldLocalId],
+      );
+
+      final rows = await txn.rawQuery(
+        'SELECT id, endpoint FROM  WHERE endpoint LIKE ? OR endpoint LIKE ?',
+        ['%%', '%'],
+      );
+      for (final r in rows) {
+        final rowId = r['id'] as int;
+        var ep = r['endpoint'] as String;
+        ep = ep.replaceAll(oldPathSegment, newPathSegment);
+        if (ep.endsWith(oldEndSegment)) {
+          ep = ep.substring(0, ep.length - oldEndSegment.length) + newEndSegment;
+        }
+        await txn.rawUpdate(
+          'UPDATE  SET endpoint = ? WHERE id = ?',
+          [ep, rowId],
+        );
+      }
+    });
   }
 }

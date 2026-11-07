@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import '../constants/approval_status.dart';
 import '../controllers/raw_material_report_display_controller.dart';
 import '../models/raw_material_models.dart';
+import '../services/pdf/arabic_pdf_service.dart';
 import '../services/user_session_service.dart';
 import '../utils/dynamic_report_pdf_generator.dart';
 import '../widgets/factory_manager_rejection_card.dart';
@@ -593,6 +594,7 @@ class RawMaterialReportDisplayView extends StatelessWidget {
           gmDecision: report.gmDecision,
           gmDecisionBy: report.gmDecisionBy,
           gmDecisionNotes: report.gmDecisionNotes,
+          rejectionCount: report.rejectionCount,
           onApprove: canDecide ? () => _showGmDecisionDialog() : null,
           onReject: canDecide ? () => _showGmDecisionDialog() : null,
         ),
@@ -652,6 +654,7 @@ class RawMaterialReportDisplayView extends StatelessWidget {
           ? 'قرار مدير الجودة على الإجراء التصحيحي'
           : 'القرار النهائي لمدير المصنع على الإجراء التصحيحي',
       isFinalStage: !isQmStage,
+      rejectionCount: report.rejectionCount,
     );
 
     if (decision == null) return;
@@ -961,6 +964,7 @@ class RawMaterialReportDisplayView extends StatelessWidget {
       reportSubtitle: report != null
           ? '${report.materialName} • تشغيلة ${report.batchNumber} • المورد: ${report.supplierName}'
           : null,
+      rejectionCount: report?.rejectionCount ?? 0,
     );
 
     if (payload == null) return;
@@ -1383,7 +1387,7 @@ class RawMaterialReportDisplayView extends StatelessWidget {
     final inspector = report.inspectorName;
 
     Widget sigCol(String title, String name, String date,
-        {Uint8List? signatureBytes, bool isApproved = true, bool isRejected = false, bool isVoided = false}) {
+        {Uint8List? signatureBytes, bool isApproved = true, bool isRejected = false, bool isVoided = false, String? statusBadge}) {
       final Color headerColor = isRejected
           ? const Color(0xFFFFCDD2)
           : (isVoided
@@ -1400,6 +1404,13 @@ class RawMaterialReportDisplayView extends StatelessWidget {
               ? Colors.orange.shade900
               : (isApproved ? Colors.green.shade800 : Colors.black87));
 
+      final effectiveBadge = statusBadge ??
+          (isRejected
+              ? 'مرفوض'
+              : (isVoided
+                  ? 'معتمد سابقاً (أُلغي برفض الإدارة)'
+                  : (isApproved ? 'معتمد' : 'بانتظار الاعتماد')));
+
       return Expanded(
         child: Container(
           decoration: BoxDecoration(
@@ -1411,7 +1422,7 @@ class RawMaterialReportDisplayView extends StatelessWidget {
           child: Stack(
             children: [
               Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Container(
                     width: double.infinity,
@@ -1431,38 +1442,82 @@ class RawMaterialReportDisplayView extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.all(6),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Text(
-                          'الاسم: $name',
-                          style: TextStyle(
-                            fontFamily: 'Tajawal',
-                            fontSize: 10.5,
-                            color: textColor,
-                            fontWeight: (isRejected || isApproved || isVoided) ? FontWeight.bold : FontWeight.normal,
-                          ),
+                        Builder(
+                          builder: (context) {
+                            final parsed = ArabicPdfService.splitNameAndRole(name);
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'الاسم: ${parsed.name}',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontFamily: 'Tajawal',
+                                    fontSize: 10.5,
+                                    color: textColor,
+                                    fontWeight: (isRejected || isApproved || isVoided) ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                ),
+                                if (parsed.role != null) ...[
+                                  const SizedBox(height: 1.5),
+                                  Text(
+                                    parsed.role!,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontFamily: 'Tajawal',
+                                      fontSize: 9.5,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            );
+                          },
                         ),
                         const SizedBox(height: 3),
-                        Text(
-                          isRejected
-                              ? 'التوقيع: [مرفوض]'
-                              : (isVoided
-                                  ? 'التوقيع: [طلب إجراء تصحيحي]'
-                                  : 'التوقيع: ${name.isNotEmpty ? "معتمد إلكترونياً" : "................"}'),
-                          style: TextStyle(
-                            fontFamily: 'Tajawal',
-                            fontSize: 10.5,
-                            fontWeight: (isRejected || isApproved || isVoided) ? FontWeight.bold : FontWeight.normal,
-                            color: textColor,
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isRejected
+                                ? const Color(0xFFFFEBEE)
+                                : (isVoided
+                                    ? const Color(0xFFFFF8E1)
+                                    : (isApproved ? const Color(0xFFE8F5E9) : const Color(0xFFFFF8E1))),
+                            border: Border.all(
+                              color: isRejected
+                                  ? const Color(0xFFC62828)
+                                  : (isVoided
+                                      ? const Color(0xFFFFB300)
+                                      : (isApproved ? const Color(0xFF2E7D32) : const Color(0xFFF57F17))),
+                              width: 0.8,
+                            ),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            effectiveBadge,
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.bold,
+                              color: isRejected
+                                  ? const Color(0xFFB71C1C)
+                                  : (isVoided
+                                      ? const Color(0xFFB78103)
+                                      : (isApproved ? const Color(0xFF1B5E20) : const Color(0xFFE65100))),
+                            ),
+                            textAlign: TextAlign.center,
                           ),
                         ),
                         const SizedBox(height: 3),
                         Text(
                           'التاريخ: ${date.isNotEmpty ? date : "2026/  /  م"}',
+                          textAlign: TextAlign.center,
                           style: TextStyle(
                             fontFamily: 'Tajawal',
-                            fontSize: 10.5,
-                            color: textColor,
+                            fontSize: 10,
+                            color: isRejected ? const Color(0xFFB71C1C) : Colors.grey.shade700,
                           ),
                         ),
                       ],

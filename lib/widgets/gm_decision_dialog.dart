@@ -17,6 +17,7 @@ class GmDecisionDialog extends StatefulWidget {
     this.severity,
     this.decisionTitle = 'قرار مدير المصنع على الإجراء التصحيحي',
     this.isFinalStage = true,
+    this.rejectionCount = 0,
   });
 
   final String reportTitle;
@@ -25,6 +26,7 @@ class GmDecisionDialog extends StatefulWidget {
   final String? severity;
   final String decisionTitle;
   final bool isFinalStage;
+  final int rejectionCount;
 
   /// فتح الشاشة وإرجاع القرار
   static Future<GmDecision?> show(
@@ -35,6 +37,7 @@ class GmDecisionDialog extends StatefulWidget {
     String? severity,
     String decisionTitle = 'قرار مدير المصنع على الإجراء التصحيحي',
     bool isFinalStage = true,
+    int rejectionCount = 0,
   }) {
     return showDialog<GmDecision>(
       context: context,
@@ -46,6 +49,7 @@ class GmDecisionDialog extends StatefulWidget {
         severity: severity,
         decisionTitle: decisionTitle,
         isFinalStage: isFinalStage,
+        rejectionCount: rejectionCount,
       ),
     );
   }
@@ -203,8 +207,10 @@ class _GmDecisionDialogState extends State<GmDecisionDialog> {
                           ? 'سيُغلق التقرير نهائياً بعد الاعتماد، ويصبح الإجراء التصحيحي معتمداً رسمياً.'
                           : 'سيتم اعتماد الإجراء التصحيحي من إدارة الجودة ورفعه إلى مدير المصنع لاتخاذ القرار النهائي.')
                       : (widget.isFinalStage
-                          ? 'سيتم رفض الإجراء التصحيحي قطعياً وإغلاق التقرير بالرفض النهائي دون إمكانية تصحيح إضافي.'
-                          : 'سيتم إرجاع التقرير للمسؤول لتنفيذ إجراء تصحيحي بديل، مع تسجيل سبب الرفض.'),
+                          ? 'سيتم رفض التقرير قطعياً وإغلاق دورة الاعتماد بالرفض النهائي من مدير المصنع دون إمكانية إرجاعه لأي شخص آخر.'
+                          : (widget.rejectionCount >= 1
+                              ? 'المحاولة الثانية والأخيرة: هذا الرفض سيكون رفضاً قطعياً ويُغلق التقرير نهائياً أو يُحال لمدير المصنع للاعتماد الإداري للإغلاق.'
+                              : 'المحاولة الأولى: سيتم إرجاع التقرير للمسؤول لتنفيذ إجراء تصحيحي بديل (متبقية فرصة أخيرة).')),
                   style: TextStyle(
                     fontFamily: 'Tajawal',
                     fontSize: 11,

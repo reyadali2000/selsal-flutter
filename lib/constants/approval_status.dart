@@ -17,6 +17,7 @@ class ApprovalStatus {
   static const String pendingQMDecision = 'Pending_QM_Decision';
   static const String pendingGMDecision = 'Pending_GM_Decision';
   static const String rejectedByGM = 'Rejected_By_GM';
+  static const String rejectedFinal = 'Rejected_Final';
   static const String closed = 'Closed';
 
   // الحالات الجديدة للاعتماد على مرحلتين (نتائج الميكروبيولوجي المتأخرة)
@@ -29,7 +30,8 @@ class ApprovalStatus {
   // الحالات الخاصة برفض الفحص الميكروبيولوجي بشكل مستقل عن التقرير الأولي
   static const String microRejected = 'Micro_Rejected';
   static const String microResamplePending = 'Micro_Resample_Pending';
-  static const String microCorrectiveInProgress = 'Micro_Corrective_In_Progress';
+  static const String microCorrectiveInProgress =
+      'Micro_Corrective_In_Progress';
 
   /// الحالات التي تعتبر "قيد التنفيذ" (لم تُغلق بعد)
   static const List<String> activeStatuses = [
@@ -85,6 +87,7 @@ class ApprovalStatus {
       case pendingGMDecision:
         return 'بانتظار القرار النهائي لمدير المصنع على الإجراء التصحيحي';
       case rejectedByGM:
+      case rejectedFinal:
         return 'مرفوض نهائياً (انتهاء دورة الاعتماد)';
       case closed:
         return 'معتمد بعد إجراء تصحيحي';
@@ -127,6 +130,7 @@ class ApprovalStatus {
       case pendingGMDecision:
         return 'بانتظار قرار مدير المصنع';
       case rejectedByGM:
+      case rejectedFinal:
         return 'مرفوض نهائياً';
       case closed:
         return 'معتمد بعد إجراء تصحيحي';
@@ -164,6 +168,7 @@ class ApprovalStatus {
       case rejected:
         return const Color(0xFFC62828);
       case rejectedByGM:
+      case rejectedFinal:
         return const Color(0xFF8B0000);
       case correctiveInProgress:
         return const Color(0xFF1565C0);
@@ -225,13 +230,40 @@ class ApprovalStatus {
   }
 
   /// هل الحالة نهائية (مغلقة تماماً)؟
-  static bool isFinal(String status) => status == approved || status == closed || status == rejectedByGM;
+  static bool isFinal(String status) =>
+      status == approved ||
+      status == closed ||
+      status == rejectedByGM ||
+      status == rejectedFinal;
 
   /// هل التقرير تم اعتماده نهائياً (سواء اعتماد مباشر أو بعد إغلاق الإجراء التصحيحي)؟
-  static bool isFinalApproved(String status) => status == approved || status == closed;
+  static bool isFinalApproved(String status) =>
+      status == approved || status == closed;
 
   /// هل التقرير مغلق ومعتمد بعد إجراء تصحيحي؟
   static bool isClosed(String status) => status == closed;
+
+  /// هل التقرير في حالة رفض قاطع ونهائي (أُغلقت الدورة بالكامل ولا يمكن اتخاذ أي إجراء بعدها)؟
+  static bool isFinalRejection(String? status) {
+    if (status == null) return false;
+    return status == rejectedByGM || status == rejectedFinal;
+  }
+
+  /// فحص ما إذا كان نوع التقرير يتضمن مرحلة اعتماد لمدير المصنع
+  static bool hasGmApprovalStep(String reportCategory) {
+    final cat = reportCategory.trim().toLowerCase();
+    if (cat.contains('final') ||
+        cat.contains('water') ||
+        cat.contains('raw') ||
+        cat.contains('مياه') ||
+        cat.contains('منتج') ||
+        cat.contains('مواد') ||
+        cat.contains('hygiene') ||
+        cat.contains('نظافة')) {
+      return true;
+    }
+    return false;
+  }
 
   /// هل الحالة تتطلب إجراءً تصحيحياً أو مراجعة إجراء تصحيحي؟
   static bool requiresCorrectiveAction(String status) =>
@@ -247,6 +279,7 @@ class ApprovalStatus {
       status == correctiveInProgress ||
       status == pendingQMDecision ||
       status == rejectedByGM ||
+      status == rejectedFinal ||
       status == pendingGMDecision;
 
   /// استخراج اسم الجهة التي رفضت التقرير
@@ -258,7 +291,9 @@ class ApprovalStatus {
     required String status,
   }) {
     if (status == rejectedByGM) {
-      return (gmDecisionBy != null && gmDecisionBy.isNotEmpty) ? gmDecisionBy : rejectedBy;
+      return (gmDecisionBy != null && gmDecisionBy.isNotEmpty)
+          ? gmDecisionBy
+          : rejectedBy;
     }
     return rejectedBy;
   }
@@ -273,7 +308,8 @@ class ApprovalStatus {
     if (!isRejectedStatus(status)) return false;
     if (status == rejectedByGM) return true;
     if (gmDecisionBy != null && gmDecisionBy.trim().isNotEmpty) return true;
-    final name = rejectorName(
+    final name =
+        rejectorName(
           rejectedBy: rejectedBy,
           gmDecisionBy: gmDecisionBy,
           status: status,
@@ -310,10 +346,7 @@ class ApprovalStatus {
     if (!isRejectedStatus(status)) return false;
 
     // إذا كان الرفض صادراً من مدير المصنع
-    if (rejectedByFactoryManager(
-      rejectedBy: rejectedBy,
-      status: status,
-    )) {
+    if (rejectedByFactoryManager(rejectedBy: rejectedBy, status: status)) {
       return false;
     }
 
@@ -427,7 +460,9 @@ class ApprovalStatus {
 
   /// هل يمكن لمدير المصنع اتخاذ قرار على هذه الحالة؟
   static bool gmCanDecide(String status) =>
-      status == pendingGM || status == pendingGMDecision || status == pendingMicroGM;
+      status == pendingGM ||
+      status == pendingGMDecision ||
+      status == pendingMicroGM;
 
   /// التحقق من صحة انتقال الحالة لمنع الكتابة فوق حالة أحدث بالخطأ
   static bool canTransition(String currentStatus, String nextStatus) {
@@ -447,27 +482,36 @@ class ApprovalStatus {
             nextStatus == approved ||
             nextStatus == awaitingMicroResults ||
             nextStatus == rejected ||
-            nextStatus == correctiveInProgress;
+        nextStatus == correctiveInProgress ||
+            nextStatus == pendingGMDecision ||
+            nextStatus == rejectedByGM ||
+            nextStatus == rejectedFinal;
       case pendingGM:
         return nextStatus == approved ||
             nextStatus == awaitingMicroResults ||
             nextStatus == rejected ||
-            nextStatus == correctiveInProgress;
+        nextStatus == correctiveInProgress || nextStatus == rejectedByGM;
       case rejected:
       case correctiveInProgress:
         return nextStatus == pendingQMDecision ||
             nextStatus == pendingGMDecision ||
-            nextStatus == correctiveInProgress;
+        nextStatus == correctiveInProgress ||
+            nextStatus == rejectedFinal ||
+            nextStatus == rejectedByGM;
       case pendingQMDecision:
         return nextStatus == pendingGMDecision ||
             nextStatus == closed ||
             nextStatus == awaitingMicroResults ||
             nextStatus == correctiveInProgress ||
-            nextStatus == rejectedByGM;
+        nextStatus == rejectedByGM || nextStatus == rejectedFinal;
       case pendingGMDecision:
         return nextStatus == closed ||
             nextStatus == awaitingMicroResults ||
             nextStatus == rejectedByGM;
+      case rejectedByGM:
+      case rejectedFinal:
+        // حالات إغلاق نهائية مقفلة تماماً لا يمكن الانتقال منها لأي حالة أخرى
+        return false;
       case awaitingMicroResults:
       case microResamplePending:
       case microRejected:
@@ -491,7 +535,8 @@ class ApprovalStatus {
             nextStatus == correctiveInProgress;
       case closed:
         // يُسمح فقط بالانتقال إلى Pending_Micro_QM إذا كانت نتائج الميكروبيولوجي معلقة
-        return nextStatus == pendingMicroQM || nextStatus == awaitingMicroResults;
+        return nextStatus == pendingMicroQM ||
+            nextStatus == awaitingMicroResults;
       default:
         return false;
     }

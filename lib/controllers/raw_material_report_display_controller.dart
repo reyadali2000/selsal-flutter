@@ -72,8 +72,21 @@ class RawMaterialReportDisplayController extends GetxController {
         try {
           final rep = report.value!;
           final sigService = UserSignatureService.instance;
+          final session = Get.isRegistered<UserSessionService>() ? UserSessionService.to : null;
+          final sessionUser = session?.currentUser.value;
+          final sessionUserId = (sessionUser != null && sessionUser.id != null && sessionUser.id! > 0)
+              ? sessionUser.id
+              : null;
+
+          final inspName = rep.inspectorName.isNotEmpty ? rep.inspectorName : 'مفتش الجودة';
+          final isInspSession = sessionUserId != null &&
+              (inspName == session?.formattedSignerName ||
+                  inspName == session?.currentUserName.value ||
+                  (sessionUser != null && sessionUser.fullName.isNotEmpty && inspName.contains(sessionUser.fullName)));
+
           inspectorSignatureBytes.value = await sigService.getSignatureBytesForUser(
-            userName: rep.inspectorName.isNotEmpty ? rep.inspectorName : 'مفتش الجودة',
+            userId: isInspSession ? sessionUserId : null,
+            userName: inspName,
             userPosition: 'مفتش الجودة / منفذ الفحص',
           );
 
@@ -96,7 +109,12 @@ class RawMaterialReportDisplayController extends GetxController {
                   : (isQsDone ? 'مشرف الجودة' : '');
 
           if (qsSignerName.isNotEmpty) {
+            final isQsSession = sessionUserId != null &&
+                (qsSignerName == session?.formattedSignerName ||
+                    qsSignerName == session?.currentUserName.value ||
+                    (sessionUser != null && sessionUser.fullName.isNotEmpty && qsSignerName.contains(sessionUser.fullName)));
             qsSignatureBytes.value = await sigService.getSignatureBytesForUser(
+              userId: isQsSession ? sessionUserId : null,
               userName: qsSignerName,
               userPosition: 'مشرف الجودة',
             );
@@ -108,7 +126,12 @@ class RawMaterialReportDisplayController extends GetxController {
               (rep.rejectedBy != null && (rep.rejectedBy!.contains('مدير المصنع') || rep.rejectedBy!.contains('العمري')));
           final qmUser = rep.qmApprovedBy ?? (!isRejectorGm ? rep.rejectedBy : null) ?? (isClosed ? 'حمود يسر' : null);
           if (qmUser != null && qmUser.isNotEmpty) {
+            final isQmSession = sessionUserId != null &&
+                (qmUser == session?.formattedSignerName ||
+                    qmUser == session?.currentUserName.value ||
+                    (sessionUser != null && sessionUser.fullName.isNotEmpty && qmUser.contains(sessionUser.fullName)));
             qmSignatureBytes.value = await sigService.getSignatureBytesForUser(
+              userId: isQmSession ? sessionUserId : null,
               userName: qmUser,
               userPosition: 'مدير الجودة',
             );
@@ -118,7 +141,12 @@ class RawMaterialReportDisplayController extends GetxController {
 
           final gmUser = rep.gmDecisionBy ?? rep.gmApprovedBy;
           if (gmUser != null && gmUser.isNotEmpty) {
+            final isGmSession = sessionUserId != null &&
+                (gmUser == session?.formattedSignerName ||
+                    gmUser == session?.currentUserName.value ||
+                    (sessionUser != null && sessionUser.fullName.isNotEmpty && gmUser.contains(sessionUser.fullName)));
             gmSignatureBytes.value = await sigService.getSignatureBytesForUser(
+              userId: isGmSession ? sessionUserId : null,
               userName: gmUser,
               userPosition: 'مدير المصنع',
             );
@@ -279,13 +307,29 @@ class RawMaterialReportDisplayController extends GetxController {
     try {
       if (Get.isRegistered<RawMaterialsApiService>()) {
         try {
-          await RawMaterialsApiService.to.updateApproval(
+          final res = await RawMaterialsApiService.to.updateApprovalWithResponse(
             reportId,
             'Pending_GM',
             approvedBy: '$qmName (مدير الجودة)',
           );
+          if (!res.isSuccess) {
+            Get.snackbar(
+              'تعذر الاعتماد من الخادم',
+              res.message.isNotEmpty ? res.message : 'رفض الخادم اعتماد التقرير',
+              backgroundColor: Colors.red.shade700,
+              colorText: Colors.white,
+            );
+            return;
+          }
         } catch (e) {
           debugPrint('API update raw material approval QM error: $e');
+          Get.snackbar(
+            'خطأ في الاتصال',
+            'تعذر الاتصال بالخادم: $e',
+            backgroundColor: Colors.red.shade700,
+            colorText: Colors.white,
+          );
+          return;
         }
       }
 
@@ -355,13 +399,29 @@ class RawMaterialReportDisplayController extends GetxController {
     try {
       if (Get.isRegistered<RawMaterialsApiService>()) {
         try {
-          await RawMaterialsApiService.to.updateApproval(
+          final res = await RawMaterialsApiService.to.updateApprovalWithResponse(
             reportId,
             'Approved',
             approvedBy: '$gmName (مدير المصنع)',
           );
+          if (!res.isSuccess) {
+            Get.snackbar(
+              'تعذر الاعتماد من الخادم',
+              res.message.isNotEmpty ? res.message : 'رفض الخادم الاعتماد النهائي',
+              backgroundColor: Colors.red.shade700,
+              colorText: Colors.white,
+            );
+            return;
+          }
         } catch (e) {
           debugPrint('API update raw material approval GM error: $e');
+          Get.snackbar(
+            'خطأ في الاتصال',
+            'تعذر الاتصال بالخادم: $e',
+            backgroundColor: Colors.red.shade700,
+            colorText: Colors.white,
+          );
+          return;
         }
       }
 
@@ -423,13 +483,24 @@ class RawMaterialReportDisplayController extends GetxController {
       return;
     }
 
-    final rejectorName = '${session.currentUserName.value} (${session.roleTitle})';
-    final newStatus = payload.hasCorrectiveAction ? 'Corrective_In_Progress' : 'Rejected';
+    final rejectorName = session.formattedSignerName;
+    final curCount = report.value?.rejectionCount ?? 0;
+    final int newCount;
+    final String newStatus;
+
+    if (payload.isDefinitive) {
+      newCount = (curCount < 2) ? 2 : curCount + 1;
+      // المواد الأولية تتضمن اعتماد مدير المصنع -> رفع لمدير المصنع للاعتماد الإداري للإغلاق
+      newStatus = ApprovalStatus.pendingGMDecision;
+    } else {
+      newCount = (curCount == 0) ? 1 : curCount + 1;
+      newStatus = payload.hasCorrectiveAction ? 'Corrective_In_Progress' : 'Rejected';
+    }
 
     try {
       if (Get.isRegistered<RawMaterialsApiService>()) {
         try {
-          await RawMaterialsApiService.to.updateApproval(
+          final res = await RawMaterialsApiService.to.updateApprovalWithResponse(
             reportId,
             newStatus,
             rejectionReason: payload.reason,
@@ -442,9 +513,26 @@ class RawMaterialReportDisplayController extends GetxController {
             correctiveAction: payload.correctiveAction,
             correctiveOwner: payload.correctiveOwner,
             correctiveDueDate: payload.dueDate?.toIso8601String(),
+            rejectionCount: newCount,
           );
+          if (!res.isSuccess) {
+            Get.snackbar(
+              'تعذر تسجيل الرفض من الخادم',
+              res.message.isNotEmpty ? res.message : 'رفض الخادم تسجيل الرفض',
+              backgroundColor: Colors.red.shade700,
+              colorText: Colors.white,
+            );
+            return;
+          }
         } catch (e) {
           debugPrint('API update raw material reject error: $e');
+          Get.snackbar(
+            'خطأ في الاتصال',
+            'تعذر الاتصال بالخادم: $e',
+            backgroundColor: Colors.red.shade700,
+            colorText: Colors.white,
+          );
+          return;
         }
       }
 
@@ -461,6 +549,7 @@ class RawMaterialReportDisplayController extends GetxController {
         correctiveAction: payload.correctiveAction,
         correctiveOwner: payload.correctiveOwner,
         correctiveDueDate: payload.dueDate,
+        rejectionCount: newCount,
       );
 
       await loadReport();
@@ -574,17 +663,23 @@ class RawMaterialReportDisplayController extends GetxController {
 
     final qmName = session.currentUserName.value.isNotEmpty ? session.currentUserName.value : 'مدير الجودة';
     final qmFull = '$qmName (مدير الجودة)';
+    final curCount = report.value?.rejectionCount ?? 0;
+    final bool isDefinitive = curCount >= 1;
+    final int newCount = isDefinitive ? (curCount + 1) : 1;
+    final String newStatus = isDefinitive ? ApprovalStatus.pendingGMDecision : 'Corrective_In_Progress';
 
     try {
       if (Get.isRegistered<RawMaterialsApiService>()) {
         try {
           await RawMaterialsApiService.to.updateApproval(
             reportId,
-            'Corrective_In_Progress',
+            newStatus,
             approvedBy: qmFull,
+            rejectionReason: report.value?.rejectionReason ?? notes,
             gmDecision: 'Rejected',
             gmDecisionBy: qmFull,
             gmDecisionNotes: notes,
+            rejectionCount: newCount,
           );
         } catch (e) {
           debugPrint('API update raw material QM corrective reject error: $e');
@@ -593,32 +688,48 @@ class RawMaterialReportDisplayController extends GetxController {
 
       await DatabaseHelper.instance.updateRawMaterialReportApproval(
         reportId: reportId,
-        approvalStatus: 'Corrective_In_Progress',
+        approvalStatus: newStatus,
         gmDecision: 'Rejected',
         gmDecisionBy: qmFull,
         gmDecisionAt: DateTime.now(),
         gmDecisionNotes: notes,
+        rejectionCount: newCount,
       );
 
       await loadReport();
 
       if (Get.isRegistered<NotificationService>()) {
         await NotificationService.to.sendNotification(
-          title: 'مدير الجودة يرفض الإجراء التصحيحي للتعديل',
-          body: 'رفض $qmFull الإجراء التصحيحي لتقرير (${report.value?.materialName}) وطلب تعديله: $notes',
+          title: isDefinitive
+              ? 'تم استنفاذ المحاولات — رفض قاطع ومحال لمدير المصنع'
+              : 'مدير الجودة يرفض الإجراء التصحيحي للتعديل (محاولة 1 من 2)',
+          body: isDefinitive
+              ? 'تم رفض الإجراء التصحيحي للمرة الثانية من قبل $qmFull وأُحيل لمدير المصنع للرفض القاطع والإغلاق: $notes'
+              : 'رفض $qmFull الإجراء التصحيحي لتقرير (${report.value?.materialName}) وطلب تعديله: $notes',
           reportId: reportId,
           reportCategory: 'Raw Material',
-          targetRole: 'QualitySpecialist',
+          targetRole: isDefinitive ? 'FactoryManager' : 'QualitySpecialist',
           branchId: report.value?.branchId,
         );
       }
 
-      Get.snackbar(
-        'تمت إعادة الإجراء التصحيحي للمسؤول',
-        'تمت إعادة التقرير للمسؤول لتعديل وتوثيق إجراء تصحيحي مناسب',
-        backgroundColor: Colors.orange.shade800,
-        colorText: Colors.white,
-      );
+      if (isDefinitive) {
+        Get.snackbar(
+          'رفض قاطع — تم الرفع لمدير المصنع',
+          'تم استنفاذ محاولتي التصحيح، وتم رفع التقرير لمدير المصنع لاتخاذ الرفض النهائي القاطع',
+          backgroundColor: Colors.red.shade800,
+          colorText: Colors.white,
+          duration: const Duration(seconds: 4),
+        );
+      } else {
+        Get.snackbar(
+          'تمت إعادة الإجراء التصحيحي للمسؤول (محاولة 1 من 2)',
+          'تمت إعادة التقرير للمسؤول لتعديل وتوثيق إجراء تصحيحي مناسب (متبقية فرصة أخيرة)',
+          backgroundColor: Colors.orange.shade800,
+          colorText: Colors.white,
+          duration: const Duration(seconds: 4),
+        );
+      }
     } catch (e) {
       Get.snackbar('خطأ', 'فشل رفض الإجراء التصحيحي: $e',
           backgroundColor: Colors.redAccent, colorText: Colors.white);
@@ -700,6 +811,9 @@ class RawMaterialReportDisplayController extends GetxController {
 
     final gmName = session.currentUserName.value.isNotEmpty ? session.currentUserName.value : 'مدير المصنع';
     final gmFull = '$gmName (مدير المصنع)';
+    final curCount = report.value?.rejectionCount ?? 0;
+    final int newCount = (curCount < 2) ? 2 : curCount;
+    final originalQmReason = report.value?.rejectionReason;
 
     try {
       if (Get.isRegistered<RawMaterialsApiService>()) {
@@ -708,9 +822,11 @@ class RawMaterialReportDisplayController extends GetxController {
             reportId,
             'Rejected_By_GM',
             approvedBy: gmFull,
+            rejectionReason: originalQmReason,
             gmDecision: 'Rejected',
             gmDecisionBy: gmFull,
             gmDecisionNotes: notes,
+            rejectionCount: newCount,
           );
         } catch (e) {
           debugPrint('API update raw material GM corrective reject error: $e');
@@ -724,6 +840,7 @@ class RawMaterialReportDisplayController extends GetxController {
         gmDecisionBy: gmFull,
         gmDecisionAt: DateTime.now(),
         gmDecisionNotes: notes,
+        rejectionCount: newCount,
       );
 
       await loadReport();

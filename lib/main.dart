@@ -13,12 +13,18 @@ import 'services/user_session_service.dart';
 import 'services/notification_service.dart';
 import 'services/pending_approvals_service.dart';
 import 'services/theme_service.dart';
+import 'services/pdf/arabic_pdf_service.dart';
 
 import 'services/api/api.dart';
 import 'services/sync/sync_manager.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // تهيئة الخطوط العربية والترويسات لمحرك توليد ومعاينة الـ PDF
+  try {
+    await ArabicPdfService.initialize();
+  } catch (_) {}
 
   // تهيئة قاعدة بيانات SQLite عبر FFI لدعم الديسك توب (Windows/Linux/macOS)
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {

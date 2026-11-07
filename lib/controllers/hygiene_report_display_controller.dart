@@ -47,6 +47,7 @@ class HygieneReportDisplayController extends GetxController {
   final gmDecision = Rx<String?>(null);
   final gmDecisionBy = Rx<String?>(null);
   final gmDecisionNotes = Rx<String?>(null);
+  final rejectionCount = 0.obs;
 
   final inspectorSignatureBytes = Rx<Uint8List?>(null);
   final qmSignatureBytes = Rx<Uint8List?>(null);
@@ -114,6 +115,9 @@ class HygieneReportDisplayController extends GetxController {
         gmDecision.value = (report['gm_decision'] ?? report['gmDecision'])?.toString();
         gmDecisionBy.value = (report['gm_decision_by'] ?? report['gmDecisionBy'])?.toString();
         gmDecisionNotes.value = (report['gm_decision_notes'] ?? report['gmDecisionNotes'])?.toString();
+        rejectionCount.value = (report['rejection_count'] ?? report['rejectionCount'] ?? 0) is int
+            ? (report['rejection_count'] ?? report['rejectionCount'] ?? 0) as int
+            : int.tryParse((report['rejection_count'] ?? report['rejectionCount'] ?? 0).toString()) ?? 0;
 
         employees.assignAll(rawEmployees.map((emp) => Employee(
           id: (emp['employee_id'] ?? emp['employeeId'] ?? emp['id'] ?? 0) as int,
@@ -190,6 +194,7 @@ class HygieneReportDisplayController extends GetxController {
         gmDecision.value = report['gm_decision'] as String?;
         gmDecisionBy.value = report['gm_decision_by'] as String?;
         gmDecisionNotes.value = report['gm_decision_notes'] as String?;
+        rejectionCount.value = (report['rejection_count'] ?? 0) as int;
 
         employees.assignAll(savedEmployees.map((employee) => Employee(
               id: employee['employee_id'] as int,
@@ -232,23 +237,47 @@ class HygieneReportDisplayController extends GetxController {
       // Load visual overlay signatures
       try {
         final sigService = UserSignatureService.instance;
+        final session = Get.isRegistered<UserSessionService>() ? UserSessionService.to : null;
+        final sessionUser = session?.currentUser.value;
+        final sessionUserId = (sessionUser != null && sessionUser.id != null && sessionUser.id! > 0)
+            ? sessionUser.id
+            : null;
+
+        final isInspectorSession = sessionUserId != null &&
+            (supervisorName == session?.formattedSignerName ||
+                supervisorName == session?.currentUserName.value ||
+                (sessionUser != null && sessionUser.fullName.isNotEmpty && supervisorName.contains(sessionUser.fullName)));
+
         inspectorSignatureBytes.value = await sigService.getSignatureBytesForUser(
+          userId: isInspectorSession ? sessionUserId : null,
           userName: supervisorName.isNotEmpty ? supervisorName : 'مفتش الجودة',
           userPosition: 'مفتش الجودة / منفذ الفحص',
         );
 
+        final isRejectorGm = ApprovalStatus.rejectedByFactoryManager(
+          rejectedBy: rejectedBy.value,
+          gmDecisionBy: gmDecisionBy.value,
+          qmApprovedBy: qmApprovedBy.value,
+          status: approvalStatus.value,
+        );
+
+        // مدير الجودة: إذا كان معتمداً سابقاً أو كان الرافض هو مدير الجودة حصراً
         final qmSigner = (qmApprovedBy.value != null && qmApprovedBy.value!.isNotEmpty)
             ? qmApprovedBy.value
-            : ((approvalStatus.value == 'Closed' ||
-                approvalStatus.value == 'Pending_GM_Decision' ||
-                approvalStatus.value == 'Rejected' ||
-                approvalStatus.value == 'Corrective_In_Progress' ||
-                approvalStatus.value == 'Rejected_By_GM')
-                ? (rejectedBy.value ?? 'حمود يسر')
+            : (!isRejectorGm && (approvalStatus.value == 'Closed' ||
+                    approvalStatus.value == 'Pending_GM_Decision' ||
+                    approvalStatus.value == 'Rejected' ||
+                    approvalStatus.value == 'Corrective_In_Progress')
+                ? rejectedBy.value
                 : null);
 
         if (qmSigner != null && qmSigner.isNotEmpty) {
+          final isQmSession = sessionUserId != null &&
+              (qmSigner == session?.formattedSignerName ||
+                  qmSigner == session?.currentUserName.value ||
+                  (sessionUser != null && sessionUser.fullName.isNotEmpty && qmSigner.contains(sessionUser.fullName)));
           qmSignatureBytes.value = await sigService.getSignatureBytesForUser(
+            userId: isQmSession ? sessionUserId : null,
             userName: qmSigner,
             userPosition: 'مدير الجودة',
           );
@@ -261,7 +290,12 @@ class HygieneReportDisplayController extends GetxController {
                 ? gmDecisionBy.value
                 : null);
         if (gmApprover != null && gmApprover.isNotEmpty) {
+          final isGmSession = sessionUserId != null &&
+              (gmApprover == session?.formattedSignerName ||
+                  gmApprover == session?.currentUserName.value ||
+                  (sessionUser != null && sessionUser.fullName.isNotEmpty && gmApprover.contains(sessionUser.fullName)));
           gmSignatureBytes.value = await sigService.getSignatureBytesForUser(
+            userId: isGmSession ? sessionUserId : null,
             userName: gmApprover,
             userPosition: 'مدير المصنع',
           );
@@ -339,13 +373,29 @@ class HygieneReportDisplayController extends GetxController {
     try {
       if (Get.isRegistered<HygieneApiService>()) {
         try {
-          await HygieneApiService.to.updateStatus(
+          final res = await HygieneApiService.to.updateStatusWithResponse(
             reportId,
             'Pending_GM',
             approvedBy: '$qmName (مدير الجودة)',
           );
+          if (!res.isSuccess) {
+            Get.snackbar(
+              'تعذر الاعتماد من الخادم',
+              res.message.isNotEmpty ? res.message : 'رفض الخادم اعتماد تقرير النظافة',
+              backgroundColor: Colors.redAccent,
+              colorText: Colors.white,
+            );
+            return;
+          }
         } catch (e) {
           debugPrint('API Hygiene updateStatus QM error: $e');
+          Get.snackbar(
+            'خطأ في الاتصال',
+            'تعذر الاتصال بالخادم: $e',
+            backgroundColor: Colors.redAccent,
+            colorText: Colors.white,
+          );
+          return;
         }
       }
 
@@ -418,13 +468,29 @@ class HygieneReportDisplayController extends GetxController {
     try {
       if (Get.isRegistered<HygieneApiService>()) {
         try {
-          await HygieneApiService.to.updateStatus(
+          final res = await HygieneApiService.to.updateStatusWithResponse(
             reportId,
             'Approved',
             approvedBy: '$gmName (مدير المصنع)',
           );
+          if (!res.isSuccess) {
+            Get.snackbar(
+              'تعذر الاعتماد من الخادم',
+              res.message.isNotEmpty ? res.message : 'رفض الخادم الاعتماد النهائي',
+              backgroundColor: Colors.redAccent,
+              colorText: Colors.white,
+            );
+            return;
+          }
         } catch (e) {
           debugPrint('API Hygiene updateStatus GM error: $e');
+          Get.snackbar(
+            'خطأ في الاتصال',
+            'تعذر الاتصال بالخادم: $e',
+            backgroundColor: Colors.redAccent,
+            colorText: Colors.white,
+          );
+          return;
         }
       }
 
@@ -487,8 +553,19 @@ class HygieneReportDisplayController extends GetxController {
       return;
     }
 
-    final rejectorName = '${session.currentUserName.value} (${session.roleTitle})';
-    final newStatus = payload.hasCorrectiveAction ? 'Corrective_In_Progress' : 'Rejected';
+    final rejectorName = session.formattedSignerName;
+    final curCount = rejectionCount.value;
+    final int newCount;
+    final String newStatus;
+
+    if (payload.isDefinitive) {
+      // تقرير النظافة: مدير الجودة هو الاعتماد الأخير -> يُغلق نهائياً فوراً بالرفض القاطع
+      newCount = (curCount < 2) ? 2 : curCount + 1;
+      newStatus = ApprovalStatus.rejectedFinal;
+    } else {
+      newCount = (curCount == 0) ? 1 : curCount + 1;
+      newStatus = payload.hasCorrectiveAction ? 'Corrective_In_Progress' : 'Rejected';
+    }
 
     try {
       if (Get.isRegistered<HygieneApiService>()) {
@@ -506,6 +583,7 @@ class HygieneReportDisplayController extends GetxController {
             correctiveAction: payload.correctiveAction,
             correctiveOwner: payload.correctiveOwner,
             correctiveDueDate: payload.dueDate?.toIso8601String(),
+            rejectionCount: newCount,
           );
         } catch (e) {
           debugPrint('API Hygiene reject updateStatus error: $e');
@@ -525,6 +603,7 @@ class HygieneReportDisplayController extends GetxController {
         correctiveAction: payload.correctiveAction,
         correctiveOwner: payload.correctiveOwner,
         correctiveDueDate: payload.dueDate,
+        rejectionCount: newCount,
       );
 
       await loadReport();
@@ -640,18 +719,23 @@ class HygieneReportDisplayController extends GetxController {
 
     final qmName = session.currentUserName.value.isNotEmpty ? session.currentUserName.value : 'مدير الجودة';
     final qmFull = '$qmName (مدير الجودة)';
+    final curCount = rejectionCount.value;
+    final bool isDefinitive = curCount >= 1;
+    final int newCount = isDefinitive ? (curCount + 1) : 1;
+    final String newStatus = isDefinitive ? ApprovalStatus.rejectedFinal : 'Corrective_In_Progress';
 
     try {
       if (Get.isRegistered<HygieneApiService>()) {
         try {
           await HygieneApiService.to.updateStatus(
             reportId,
-            'Corrective_In_Progress',
+            newStatus,
             approvedBy: qmFull,
-            rejectionReason: notes,
+            rejectionReason: rejectionReason.value ?? notes,
             gmDecision: 'Rejected',
             gmDecisionBy: qmFull,
             gmDecisionNotes: notes,
+            rejectionCount: newCount,
           );
         } catch (e) {
           debugPrint('API Hygiene qmRejectCorrectiveAction error: $e');
@@ -660,33 +744,50 @@ class HygieneReportDisplayController extends GetxController {
 
       await DatabaseHelper.instance.updateHygieneReportApproval(
         reportId: reportId,
-        approvalStatus: 'Corrective_In_Progress',
+        approvalStatus: newStatus,
         gmDecision: 'Rejected',
         gmDecisionBy: qmFull,
         gmDecisionAt: DateTime.now(),
         gmDecisionNotes: notes,
+        rejectionCount: newCount,
       );
 
       await loadReport();
 
       if (Get.isRegistered<NotificationService>()) {
         await NotificationService.to.sendNotification(
-          title: 'مدير الجودة يرفض الإجراء التصحيحي للتعديل',
-          body: 'رفض $qmFull الإجراء التصحيحي لتقرير النظافة (رقم #$reportId) وطلب تعديله: $notes',
+          title: isDefinitive
+              ? 'تم استنفاذ المحاولات — إغلاق تقرير النظافة بالرفض النهائي'
+              : 'مدير الجودة يرفض الإجراء التصحيحي للتعديل (محاولة 1 من 2)',
+          body: isDefinitive
+              ? 'رفض $qmFull الإجراء التصحيحي للمرة الثانية وتم إغلاق تقرير النظافة (#$reportId) نهائياً: $notes'
+              : 'رفض $qmFull الإجراء التصحيحي لتقرير النظافة (رقم #$reportId) وطلب تعديله: $notes',
           reportId: reportId,
           reportCategory: 'Hygiene',
-          targetRole: 'QualitySpecialist',
+          targetRole: isDefinitive ? 'All' : 'QualitySpecialist',
           branchId: reportBranchId,
         );
       }
 
-      Get.snackbar(
-        'تمت إعادة الإجراء التصحيحي للمسؤول',
-        'تمت إعادة التقرير للمسؤول لتعديل وتوثيق إجراء تصحيحي مناسب',
-        backgroundColor: Colors.orange.shade800,
-        colorText: Colors.white,
-        snackPosition: SnackPosition.TOP,
-      );
+      if (isDefinitive) {
+        Get.snackbar(
+          'رفض قاطع وإغلاق نهائي',
+          'تم استنفاذ محاولتي التصحيح، وأُغلق تقرير النظافة نهائياً بالرفض القاطع لمدير الجودة',
+          backgroundColor: Colors.red.shade800,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.TOP,
+          duration: const Duration(seconds: 4),
+        );
+      } else {
+        Get.snackbar(
+          'تمت إعادة الإجراء التصحيحي للمسؤول (محاولة 1 من 2)',
+          'تمت إعادة التقرير للمسؤول لتعديل وتوثيق إجراء تصحيحي مناسب (متبقية فرصة أخيرة)',
+          backgroundColor: Colors.orange.shade800,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.TOP,
+          duration: const Duration(seconds: 4),
+        );
+      }
     } catch (e) {
       Get.snackbar('خطأ', 'فشل رفض الإجراء التصحيحي: $e',
           backgroundColor: Colors.redAccent, colorText: Colors.white);
@@ -769,6 +870,9 @@ class HygieneReportDisplayController extends GetxController {
 
     final gmName = session.currentUserName.value.isNotEmpty ? session.currentUserName.value : 'مدير المصنع';
     final gmFull = '$gmName (مدير المصنع)';
+    final curCount = rejectionCount.value;
+    final int newCount = (curCount < 2) ? 2 : curCount;
+    final originalQmReason = rejectionReason.value;
 
     try {
       if (Get.isRegistered<HygieneApiService>()) {
@@ -777,10 +881,11 @@ class HygieneReportDisplayController extends GetxController {
             reportId,
             'Rejected_By_GM',
             approvedBy: gmFull,
-            rejectionReason: notes,
+            rejectionReason: originalQmReason,
             gmDecision: 'Rejected',
             gmDecisionBy: gmFull,
             gmDecisionNotes: notes,
+            rejectionCount: newCount,
           );
         } catch (e) {
           debugPrint('API Hygiene gmReject error: $e');
@@ -794,6 +899,7 @@ class HygieneReportDisplayController extends GetxController {
         gmDecisionBy: gmFull,
         gmDecisionAt: DateTime.now(),
         gmDecisionNotes: notes,
+        rejectionCount: newCount,
       );
 
       await loadReport();

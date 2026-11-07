@@ -66,6 +66,56 @@ class WaterQualityApiService extends GetxService {
     return null;
   }
 
+  /// تحديث حالة الاعتماد أو الرفض مع استرجاع كائن الاستجابة الكامل [ApiResponse]
+  Future<ApiResponse> updateStatusWithResponse(
+    int id,
+    String status, {
+    String? approvedBy,
+    String? rejectionReason,
+    String? rejectionCategory,
+    String? severityLevel,
+    String? rejectionNotes,
+    String? affectedProducts,
+    String? immediateAction,
+    String? correctiveAction,
+    String? correctiveOwner,
+    String? correctiveDueDate,
+    String? gmDecision,
+    String? gmDecisionBy,
+    String? gmDecisionNotes,
+    String? microRejectionReason,
+    String? microRejectedBy,
+    String? microRejectionAction,
+    int? rejectionCount,
+  }) async {
+    return await _client.writeQueued(
+      'PUT',
+      '/WaterQuality/logs/$id/status',
+      body: {
+        'status': status,
+        'approvedBy': approvedBy,
+        'rejectionReason': rejectionReason,
+        if (rejectionCategory != null) 'rejectionCategory': rejectionCategory,
+        if (severityLevel != null) 'severityLevel': severityLevel,
+        if (rejectionNotes != null) 'rejectionNotes': rejectionNotes,
+        if (affectedProducts != null) 'affectedProducts': affectedProducts,
+        if (immediateAction != null) 'immediateAction': immediateAction,
+        'correctiveAction': correctiveAction,
+        'correctiveOwner': correctiveOwner,
+        'correctiveDueDate': correctiveDueDate,
+        'gmDecision': gmDecision,
+        'gmDecisionBy': gmDecisionBy,
+        'gmDecisionNotes': gmDecisionNotes,
+        if (rejectionCount != null) 'rejectionCount': rejectionCount,
+        if (microRejectionReason != null) 'microRejectionReason': microRejectionReason,
+        if (microRejectedBy != null) 'microRejectedBy': microRejectedBy,
+        if (microRejectionAction != null) 'microRejectionAction': microRejectionAction,
+      },
+      entityType: 'water_quality_status',
+      entityId: id,
+    );
+  }
+
   /// تحديث حالة الاعتماد أو الرفض أو الإجراء التصحيحي (يدعم العمل أوفلاين والمزامنة التلقائية)
   Future<bool> updateStatus(
     int id,
@@ -86,6 +136,7 @@ class WaterQualityApiService extends GetxService {
     String? microRejectionReason,
     String? microRejectedBy,
     String? microRejectionAction,
+    int? rejectionCount,
   }) async {
     final response = await _client.writeQueued(
       'PUT',
@@ -105,6 +156,7 @@ class WaterQualityApiService extends GetxService {
         'gmDecision': gmDecision,
         'gmDecisionBy': gmDecisionBy,
         'gmDecisionNotes': gmDecisionNotes,
+        if (rejectionCount != null) 'rejectionCount': rejectionCount,
         if (microRejectionReason != null) 'microRejectionReason': microRejectionReason,
         if (microRejectedBy != null) 'microRejectedBy': microRejectedBy,
         if (microRejectionAction != null) 'microRejectionAction': microRejectionAction,

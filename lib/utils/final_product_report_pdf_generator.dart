@@ -1,4 +1,4 @@
-﻿import 'package:flutter/services.dart';
+import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -30,6 +30,7 @@ class FinalProductReportPdfGenerator {
     Uint8List? microGmSignatureBytes,
     Uint8List? rejectedSignatureBytes,
   }) async {
+    await ArabicPdfService.initialize();
     final pdf = pw.Document();
 
     pw.MemoryImage? logoImage;
@@ -716,19 +717,18 @@ class FinalProductReportPdfGenerator {
         ? (effectiveGmDate != null ? DynamicReportPdfGenerator.formatArabicDate(effectiveGmDate) : 'معتمد بعد إجراء تصحيحي')
         : (effectiveGmDate != null ? DynamicReportPdfGenerator.formatArabicDate(effectiveGmDate) : (isGmDone || isGmRejected ? 'معتمد' : '  /  / 2026م'));
 
-    final qmSig = isClosed
-        ? 'التوقيع: [معتمد سابقاً]'
+    final gmStatusText = isClosed
+        ? 'معتمد بعد إجراء تصحيحي'
+        : (isGmRejected ? 'مرفوض' : (isGmDone ? 'معتمد' : 'بانتظار الاعتماد'));
+
+    final qmStatusText = isClosed
+        ? 'مرفوض بإجراء تصحيحي'
         : ((isQmRejected || wasQmRejected)
-            ? '[مرفوض]'
-            : (isQmDone
-                ? 'التوقيع: [معتمد إلكترونياً]'
-                : (wasQmApproved
-                    ? 'التوقيع: [معتمد سابقاً - أُلغي برفض الإدارة]'
-                    : 'التوقيع: .....................')));
-    final gmSig = isClosed
-        ? 'التوقيع: [معتمد بعد إجراء تصحيحي]'
-        : (isGmRejected ? '[مرفوض]' : (isGmDone ? 'التوقيع: [معتمد إلكترونياً]' : 'التوقيع: .....................'));
-    const inspectorSig = 'التوقيع: [معتمد إلكترونياً]';
+            ? 'مرفوض'
+            : (wasQmApproved || isGmRejected
+                ? 'معتمد سابقاً (أُلغي برفض الإدارة)'
+                : (isQmDone ? 'معتمد' : 'بانتظار الاعتماد')));
+    const inspectorStatusText = 'مكتمل ومُرسل';
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -753,9 +753,36 @@ class FinalProductReportPdfGenerator {
             ),
             pw.TableRow(
               children: [
-                _buildSignatureCell(rawName: gmName, sig: gmSig, date: 'التاريخ: $gmDate', ttf: ttf, ttfBold: ttfBold, signatureBytes: isGmRejected ? rejectedSignatureBytes : (isClosed || isGmDone ? gmSignatureBytes : null), isRejected: isGmRejected, isApproved: isClosed),
-                _buildSignatureCell(rawName: qmName, sig: qmSig, date: 'التاريخ: $qmDate', ttf: ttf, ttfBold: ttfBold, signatureBytes: (isQmRejected || wasQmRejected) ? rejectedSignatureBytes : ((isClosed || isQmDone || wasQmApproved) ? qmSignatureBytes : null), isRejected: (isQmRejected || wasQmRejected), isVoided: isClosed || wasQmApproved),
-                _buildSignatureCell(rawName: sampleTakerName, sig: inspectorSig, date: 'التاريخ: $entryDate', ttf: ttf, ttfBold: ttfBold, signatureBytes: inspectorSignatureBytes),
+                _buildSignatureCell(
+                  rawName: gmName,
+                  statusText: gmStatusText,
+                  date: 'التاريخ: $gmDate',
+                  ttf: ttf,
+                  ttfBold: ttfBold,
+                  signatureBytes: isGmRejected ? rejectedSignatureBytes : (isClosed || isGmDone ? gmSignatureBytes : null),
+                  isRejected: isGmRejected,
+                  isApproved: (isClosed || isGmDone) && !isGmRejected,
+                ),
+                _buildSignatureCell(
+                  rawName: qmName,
+                  statusText: qmStatusText,
+                  date: 'التاريخ: $qmDate',
+                  ttf: ttf,
+                  ttfBold: ttfBold,
+                  signatureBytes: (isQmRejected || wasQmRejected) ? rejectedSignatureBytes : ((isClosed || isQmDone || wasQmApproved) ? qmSignatureBytes : null),
+                  isRejected: (isQmRejected || wasQmRejected),
+                  isApproved: isQmDone && !isClosed && !(isQmRejected || wasQmRejected) && !wasQmApproved && !isGmRejected,
+                  isVoided: isClosed || wasQmApproved || isGmRejected,
+                ),
+                _buildSignatureCell(
+                  rawName: sampleTakerName,
+                  statusText: inspectorStatusText,
+                  date: 'التاريخ: $entryDate',
+                  ttf: ttf,
+                  ttfBold: ttfBold,
+                  signatureBytes: inspectorSignatureBytes,
+                  isApproved: true,
+                ),
               ],
             ),
           ],
@@ -766,7 +793,7 @@ class FinalProductReportPdfGenerator {
 
   static pw.Widget _buildSignatureCell({
     required String rawName,
-    required String sig,
+    required String statusText,
     required String date,
     required pw.Font ttf,
     required pw.Font ttfBold,
@@ -777,36 +804,28 @@ class FinalProductReportPdfGenerator {
   }) {
     final parsed = ArabicPdfService.splitNameAndRole(rawName);
 
-    final pdfRed = PdfColor.fromHex('#C62828');
-    final pdfAmber = PdfColor.fromHex('#E65100');
-    final pdfGreen = PdfColor.fromHex('#2E7D32');
-    final titleColor = isRejected ? pdfRed : (isVoided ? pdfAmber : (isApproved ? pdfGreen : PdfColors.black));
-    final sigColor = isRejected ? pdfRed : (isVoided ? pdfAmber : (isApproved || sig.contains('معتمد') ? pdfGreen : PdfColors.black));
-
     return pw.Padding(
       padding: const pw.EdgeInsets.all(5),
       child: pw.Stack(
         alignment: pw.Alignment.center,
         children: [
           pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
             children: [
-              pw.Text('الاسم: ${parsed.name}', style: pw.TextStyle(font: ttfBold, fontSize: 8, color: titleColor)),
+              pw.Text('الاسم: ${parsed.name}', textAlign: pw.TextAlign.center, style: pw.TextStyle(font: ttfBold, fontSize: 8.5)),
               if (parsed.role != null) ...[
                 pw.SizedBox(height: 1),
-                pw.Text(parsed.role!, style: pw.TextStyle(font: ttf, fontSize: 6.5, color: isRejected ? titleColor : PdfColors.grey700)),
+                pw.Text(parsed.role!, textAlign: pw.TextAlign.center, style: pw.TextStyle(font: ttf, fontSize: 7, color: PdfColors.grey700)),
               ],
-              pw.SizedBox(height: 2),
-              pw.Text(
-                sig,
-                style: pw.TextStyle(
-                  font: ttf,
-                  fontSize: 8,
-                  color: sigColor,
-                ),
+              pw.SizedBox(height: 2.5),
+              ArabicPdfService.statusBadge(
+                text: statusText,
+                isApproved: isApproved && !isRejected && !isVoided,
+                isRejected: isRejected,
+                fontSize: 8,
               ),
-              pw.SizedBox(height: 2),
-              pw.Text(date, style: pw.TextStyle(font: ttf, fontSize: 8, color: titleColor)),
+              pw.SizedBox(height: 2.5),
+              pw.Text(date, textAlign: pw.TextAlign.center, style: pw.TextStyle(font: ttf, fontSize: 7.5, color: isRejected ? const PdfColor.fromInt(0xFFB71C1C) : PdfColors.grey700)),
             ],
           ),
           if (signatureBytes != null)

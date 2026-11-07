@@ -6,6 +6,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import '../constants/approval_status.dart';
 import '../controllers/raw_water_report_display_controller.dart';
 import '../models/water_quality_models.dart';
+import '../services/pdf/arabic_pdf_service.dart';
 import '../services/user_session_service.dart';
 import '../utils/dynamic_report_pdf_generator.dart';
 import '../widgets/factory_manager_rejection_card.dart';
@@ -716,6 +717,7 @@ class RawWaterReportDisplayView extends StatelessWidget {
           gmDecision: log.gmDecision,
           gmDecisionBy: log.gmDecisionBy,
           gmDecisionNotes: log.gmDecisionNotes,
+          rejectionCount: log.rejectionCount,
           onApprove: canDecide ? () => _showGmDecisionDialog() : null,
           onReject: canDecide ? () => _showGmDecisionDialog() : null,
         ),
@@ -819,6 +821,7 @@ class RawWaterReportDisplayView extends StatelessWidget {
           ? 'قرار مدير الجودة على الإجراء التصحيحي'
           : 'القرار النهائي لمدير المصنع على الإجراء التصحيحي',
       isFinalStage: !isQmStage,
+      rejectionCount: log.rejectionCount,
     );
 
     if (decision == null) return;
@@ -913,6 +916,7 @@ class RawWaterReportDisplayView extends StatelessWidget {
       reportSubtitle: log.batchNumber != null && log.batchNumber!.isNotEmpty
           ? 'رقم الدفعة: ${log.batchNumber} • المصنع: ${log.branchName}'
           : 'المصنع: ${log.branchName}',
+      rejectionCount: log.rejectionCount,
     );
 
     if (payload == null) return;
@@ -1432,7 +1436,45 @@ class RawWaterReportDisplayView extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 1),
+                const SizedBox(height: 3),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isRejected
+                        ? const Color(0xFFFFEBEE)
+                        : (isVoided
+                            ? const Color(0xFFFFF8E1)
+                            : (isApproved ? const Color(0xFFE8F5E9) : const Color(0xFFFFF8E1))),
+                    border: Border.all(
+                      color: isRejected
+                          ? const Color(0xFFC62828)
+                          : (isVoided
+                              ? const Color(0xFFFFB300)
+                              : (isApproved ? const Color(0xFF2E7D32) : const Color(0xFFF57F17))),
+                      width: 0.8,
+                    ),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    isRejected
+                        ? 'مرفوض'
+                        : (isVoided
+                            ? 'معتمد سابقاً (أُلغي برفض الإدارة)'
+                            : (isApproved ? 'معتمد' : 'بانتظار الاعتماد')),
+                    style: TextStyle(
+                      fontFamily: 'Tajawal',
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      color: isRejected
+                          ? const Color(0xFFB71C1C)
+                          : (isVoided
+                              ? const Color(0xFFB78103)
+                              : (isApproved ? const Color(0xFF1B5E20) : const Color(0xFFE65100))),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 2),
                 Text(
                   dateStr,
                   style: TextStyle(
@@ -1520,19 +1562,20 @@ class RawWaterReportDisplayView extends StatelessWidget {
         TableRow(children: [
           _buildReportSignatureCell(
             name: 'الاسم: $inspectorName',
-            sig: 'التوقيع: [معتمد إلكترونياً]',
+            sig: 'مكتمل ومُرسل',
             date: 'التاريخ: $inspectorDate م',
             signatureBytes: controller.inspectorSignatureBytes.value,
+            isApproved: true,
           ),
           _buildReportSignatureCell(
             name: 'الاسم: ${qmName.isNotEmpty ? qmName : ".............................."}',
             sig: log.approvalStatus == 'Closed'
-                ? 'التوقيع: [معتمد سابقاً]'
+                ? 'مرفوض بإجراء تصحيحي'
                 : (qmName.isNotEmpty
                     ? (isQmRejected
-                        ? '[مرفوض]'
-                        : (wasQmApproved ? 'التوقيع: [معتمد سابقاً - أُلغي برفض الإدارة]' : 'التوقيع: [معتمد إلكترونياً]'))
-                    : 'التوقيع: ..............................'),
+                        ? 'مرفوض'
+                        : (wasQmApproved ? 'معتمد سابقاً (أُلغي برفض الإدارة)' : 'معتمد'))
+                    : 'بانتظار الاعتماد'),
             date: log.approvalStatus == 'Closed'
                 ? 'التاريخ: ${qmDate.isNotEmpty ? qmDate : "معتمد سابقاً"} م'
                 : (qmDate.isNotEmpty ? 'التاريخ: $qmDate م' : 'التاريخ:   /   / 20م'),
@@ -1541,18 +1584,19 @@ class RawWaterReportDisplayView extends StatelessWidget {
                 : ((qmName.isNotEmpty || wasQmApproved || log.approvalStatus == 'Closed') ? controller.qmSignatureBytes.value : null),
             isRejected: isQmRejected && log.approvalStatus != 'Closed',
             isVoided: log.approvalStatus == 'Closed' || wasQmApproved,
+            isApproved: !isQmRejected && (qmName.isNotEmpty || log.approvalStatus == 'Closed') && !wasQmApproved,
           ),
           _buildReportSignatureCell(
             name: 'الاسم: ${gmName.isNotEmpty ? gmName : ".............................."}',
             sig: log.approvalStatus == 'Closed'
-                ? 'التوقيع: [معتمد بعد إجراء تصحيحي]'
-                : (gmName.isNotEmpty ? (isGmRejected ? '[مرفوض]' : 'التوقيع: [معتمد إلكترونياً]') : 'التوقيع: ..............................'),
+                ? 'معتمد بعد إجراء تصحيحي'
+                : (gmName.isNotEmpty ? (isGmRejected ? 'مرفوض' : 'معتمد') : 'بانتظار الاعتماد'),
             date: log.approvalStatus == 'Closed'
                 ? 'التاريخ: ${gmDate.isNotEmpty ? gmDate : "معتمد بعد إجراء تصحيحي"} م'
                 : (gmDate.isNotEmpty ? 'التاريخ: $gmDate م' : 'التاريخ:   /   / 20م'),
             signatureBytes: (isGmRejected && log.approvalStatus != 'Closed') ? controller.rejectedSignatureBytes.value : controller.gmSignatureBytes.value,
             isRejected: isGmRejected && log.approvalStatus != 'Closed',
-            isApproved: log.approvalStatus == 'Closed',
+            isApproved: log.approvalStatus == 'Closed' || (gmName.isNotEmpty && !isGmRejected),
           ),
         ]),
       ],
@@ -1568,6 +1612,15 @@ class RawWaterReportDisplayView extends StatelessWidget {
     bool isVoided = false,
     bool isApproved = false,
   }) {
+    final cleanSig = sig.replaceAll('[', '').replaceAll(']', '').replaceAll('التوقيع:', '').trim();
+    final badgeText = cleanSig.isNotEmpty
+        ? cleanSig
+        : (isRejected
+            ? 'مرفوض'
+            : (isVoided
+                ? 'معتمد سابقاً (أُلغي برفض الإدارة)'
+                : (isApproved ? 'معتمد' : 'بانتظار الاعتماد')));
+
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       child: Stack(
@@ -1577,44 +1630,85 @@ class RawWaterReportDisplayView extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                name,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Tajawal',
-                  fontSize: 13,
-                  color: isRejected ? Colors.red.shade800 : Colors.black87,
-                  fontWeight: isRejected ? FontWeight.bold : FontWeight.normal,
-                ),
+              Builder(
+                builder: (context) {
+                  final parsed = ArabicPdfService.splitNameAndRole(name);
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'الاسم: ${parsed.name}',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 11,
+                          color: isRejected ? const Color(0xFFB71C1C) : Colors.black87,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (parsed.role != null) ...[
+                        const SizedBox(height: 1.5),
+                        Text(
+                          parsed.role!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'Tajawal',
+                            fontSize: 9.5,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+                },
               ),
-              const SizedBox(height: 6),
-              Text(
-                sig,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Tajawal',
-                  fontSize: 13,
-                  fontWeight: isRejected ? FontWeight.bold : FontWeight.normal,
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
                   color: isRejected
-                      ? Colors.red.shade800
+                      ? const Color(0xFFFFEBEE)
                       : (isVoided
-                          ? Colors.orange.shade900
-                          : (sig.contains('معتمد') ? Colors.green.shade800 : Colors.black87)),
+                          ? const Color(0xFFFFF8E1)
+                          : (isApproved ? const Color(0xFFE8F5E9) : const Color(0xFFFFF8E1))),
+                  border: Border.all(
+                    color: isRejected
+                        ? const Color(0xFFC62828)
+                        : (isVoided
+                            ? const Color(0xFFFFB300)
+                            : (isApproved ? const Color(0xFF2E7D32) : const Color(0xFFF57F17))),
+                    width: 0.8,
+                  ),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  badgeText,
+                  style: TextStyle(
+                    fontFamily: 'Tajawal',
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: isRejected
+                        ? const Color(0xFFB71C1C)
+                        : (isVoided
+                            ? const Color(0xFFB78103)
+                            : (isApproved ? const Color(0xFF1B5E20) : const Color(0xFFE65100))),
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Text(
                 date,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontFamily: 'Tajawal',
-                  fontSize: 13,
-                  color: isRejected ? Colors.red.shade800 : Colors.black87,
+                  fontSize: 10,
+                  color: isRejected ? const Color(0xFFB71C1C) : Colors.grey.shade700,
                 ),
               ),
             ],
           ),
-          if (signatureBytes != null)
+          if (signatureBytes != null && (isApproved || isRejected || isVoided))
             Positioned.fill(
               child: Opacity(
                 opacity: 0.42,

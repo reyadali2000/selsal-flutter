@@ -311,6 +311,7 @@ class RawMaterialReport {
   final String? gmDecisionBy;
   final DateTime? gmDecisionAt;
   final String? gmDecisionNotes;
+  final int rejectionCount;
 
   RawMaterialReport({
     this.id,
@@ -361,6 +362,7 @@ class RawMaterialReport {
     this.gmDecisionBy,
     this.gmDecisionAt,
     this.gmDecisionNotes,
+    this.rejectionCount = 0,
   }) : createdAt = createdAt ?? DateTime.now();
 
   RawMaterialReport copyWith({
@@ -412,6 +414,7 @@ class RawMaterialReport {
     String? gmDecisionBy,
     DateTime? gmDecisionAt,
     String? gmDecisionNotes,
+    int? rejectionCount,
   }) {
     return RawMaterialReport(
       id: id ?? this.id,
@@ -462,6 +465,7 @@ class RawMaterialReport {
       gmDecisionBy: gmDecisionBy ?? this.gmDecisionBy,
       gmDecisionAt: gmDecisionAt ?? this.gmDecisionAt,
       gmDecisionNotes: gmDecisionNotes ?? this.gmDecisionNotes,
+      rejectionCount: rejectionCount ?? this.rejectionCount,
     );
   }
 
@@ -515,6 +519,7 @@ class RawMaterialReport {
       'gm_decision_by': gmDecisionBy,
       'gm_decision_at': gmDecisionAt?.toIso8601String(),
       'gm_decision_notes': gmDecisionNotes,
+      'rejection_count': rejectionCount,
     };
   }
 
@@ -574,6 +579,9 @@ class RawMaterialReport {
           ? DateTime.tryParse(json['gm_decision_at'].toString())
           : (json['gmDecisionAt'] != null ? DateTime.tryParse(json['gmDecisionAt'].toString()) : null),
       gmDecisionNotes: json['gm_decision_notes'] as String? ?? (json['gmDecisionNotes'] as String?),
+      rejectionCount: (json['rejection_count'] ?? json['rejectionCount']) is int
+          ? (json['rejection_count'] ?? json['rejectionCount']) as int
+          : int.tryParse((json['rejection_count'] ?? json['rejectionCount'] ?? '0').toString()) ?? 0,
     );
   }
 

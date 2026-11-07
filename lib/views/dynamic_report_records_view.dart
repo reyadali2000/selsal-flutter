@@ -7,6 +7,7 @@ import '../routes/app_routes.dart';
 import '../services/user_session_service.dart';
 import '../utils/dynamic_report_pdf_generator.dart';
 import '../widgets/branch_filter_selector.dart';
+import '../widgets/sync_status_indicator.dart';
 import '../widgets/ds/ds.dart';
 import 'dynamic_report_display_view.dart';
 
@@ -38,6 +39,7 @@ class DynamicReportRecordsView extends StatelessWidget {
           centerTitle: true,
           elevation: 1,
           actions: [
+            const SyncStatusIndicator(),
             Obx(() {
               if (!UserSessionService.to.canFilterByBranch) return const SizedBox.shrink();
               return Padding(

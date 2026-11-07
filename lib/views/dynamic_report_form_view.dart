@@ -6,6 +6,7 @@ import '../models/dynamic_report_models.dart';
 import '../widgets/dynamic_field_widget.dart';
 import '../widgets/ds/ds.dart';
 import '../utils/dynamic_report_color_helper.dart';
+import '../widgets/sync_status_indicator.dart';
 
 class DynamicReportFormView extends StatelessWidget {
   const DynamicReportFormView({super.key});
@@ -34,6 +35,9 @@ class DynamicReportFormView extends StatelessWidget {
         title: name,
         subtitle: subtitle,
         maxContentWidth: 900,
+        actions: const [
+          SyncStatusIndicator(),
+        ],
         leading: controller.isFormOpen.value && !controller.isDirectRecordEntry.value
             ? IconButton(
                 icon: const Icon(Icons.arrow_back_rounded),

@@ -15,6 +15,15 @@ class DynamicReportPdfGenerator {
   static const PdfColor _zebraRowColor = PdfColor.fromInt(0xFFD9E1F3);
   static const PdfColor _tableBorder = PdfColor.fromInt(0xFF8DB4E2);
 
+  /// تحويل كود اللون السداسي Hex (مثل #BDD7EE أو BDD7EE) إلى PdfColor متوافق
+  static PdfColor? parseHexPdfColor(String? hex) {
+    if (hex == null || hex.trim().isEmpty) return null;
+    var c = hex.replaceAll('#', '').trim();
+    if (c.length == 6) c = 'FF$c';
+    final val = int.tryParse(c, radix: 16);
+    return val != null ? PdfColor.fromInt(val) : null;
+  }
+
   static Future<Uint8List> generate({
     required DynamicReport report,
     required DynamicReportRecord record,
@@ -26,6 +35,7 @@ class DynamicReportPdfGenerator {
     Uint8List? creatorSignatureBytes,
     Uint8List? rejectedSignatureBytes,
   }) async {
+    await ArabicPdfService.initialize();
     final pdf = pw.Document();
 
     pw.MemoryImage? logoImage;
@@ -799,16 +809,24 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
               textAlign: pw.TextAlign.right, style: pw.TextStyle(font: ttf, fontSize: 10));
         }
 
-        // In RTL: child 0 is Left (value), child 1 is Right (label)
+        // استخراج ألوان الحقل المخصصة (أو الافتراضية الأنيقة)
+        final PdfColor labelBg = parseHexPdfColor(field.headerBgColor) ?? _headerLightBlue;
+        final PdfColor? valBg = parseHexPdfColor(field.valueBgColor);
+
+        // In RTL: child 0 is Left (value / التفاصيل), child 1 is Right (label / البند)
         rows.add(
           pw.TableRow(
             children: [
-              pw.Padding(
+              pw.Container(
+                color: valBg,
                 padding: const pw.EdgeInsets.all(5),
+                alignment: pw.Alignment.centerRight,
                 child: valueChild,
               ),
-              pw.Padding(
+              pw.Container(
+                color: labelBg,
                 padding: const pw.EdgeInsets.all(5),
+                alignment: pw.Alignment.centerRight,
                 child: pw.Text(field.label, textAlign: pw.TextAlign.right, style: pw.TextStyle(font: ttfBold, fontSize: 10)),
               ),
             ],
@@ -867,10 +885,10 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
   /// - التعليمات: نصها الثابت في defaultValue.
   static pw.Widget _buildPdfBoxField(DynamicReportField field, String? value, pw.Font ttf, pw.Font ttfBold, {bool isCompact = false}) {
     final bool isNote = field.fieldType == 'note';
-    final PdfColor headerColor =
-        isNote ? const PdfColor.fromInt(0xFFFFE082) : const PdfColor.fromInt(0xFF90CAF9);
-    final PdfColor bodyColor =
-        isNote ? const PdfColor.fromInt(0xFFFFF8E1) : const PdfColor.fromInt(0xFFE3F2FD);
+    final PdfColor headerColor = parseHexPdfColor(field.headerBgColor) ??
+        (isNote ? const PdfColor.fromInt(0xFFFFE082) : const PdfColor.fromInt(0xFF90CAF9));
+    final PdfColor bodyColor = parseHexPdfColor(field.valueBgColor) ??
+        (isNote ? const PdfColor.fromInt(0xFFFFF8E1) : const PdfColor.fromInt(0xFFE3F2FD));
     final PdfColor headerTextColor =
         isNote ? const PdfColor.fromInt(0xFFE65100) : const PdfColor.fromInt(0xFF1565C0);
 
@@ -1353,25 +1371,23 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
         ? (record.gmDecisionBy ?? record.rejectedBy ?? 'مدير المصنع')
         : (record.gmDecisionBy ?? record.gmApprovedBy ?? (isGmDone ? 'د. خالد العمري (مدير المصنع)' : '________________'));
 
-    final qsSig = isQsRejected
-        ? '[مرفوض]'
-        : (effectiveQsDone ? '[معتمد إلكترونياً]' : 'التوقيع: .....................');
-    
-    // عند اعتماد المدير بعد إجراء تصحيحي، تظهر خانة مدير الجودة كـ [معتمد سابقاً]
-    final qmSig = isClosed
-        ? '[معتمد سابقاً]'
-        : (wasQmApproved
-            ? '[معتمد سابقاً]'
-            : ((isQmRejected || wasQmRejected)
-                ? '[مرفوض]'
-                : (isQmDone ? '[معتمد إلكترونياً]' : 'التوقيع: .....................')));
-    
-    // خانة مدير المصنع تظهر [معتمد بعد إجراء تصحيحي]
-    final gmSig = isGmRejected
-        ? '[مرفوض]'
+    final qsStatusText = isQsRejected
+        ? 'مرفوض'
+        : (effectiveQsDone ? 'معتمد' : 'بانتظار الاعتماد');
+
+    final qmStatusText = isClosed
+        ? 'معتمد سابقاً'
+        : ((isQmRejected || wasQmRejected)
+            ? 'مرفوض'
+            : (wasQmApproved || isGmRejected
+                ? 'معتمد سابقاً (أُلغي برفض الإدارة)'
+                : (isQmDone ? 'معتمد' : 'بانتظار الاعتماد')));
+
+    final gmStatusText = isGmRejected
+        ? 'مرفوض'
         : (isClosed
-            ? '[معتمد بعد إجراء تصحيحي]'
-            : (isGmDone ? '[معتمد إلكترونياً]' : 'التوقيع: .....................'));
+            ? 'معتمد بعد إجراء تصحيحي'
+            : (isGmDone ? 'معتمد' : 'بانتظار الاعتماد'));
 
     final qsDate = isQsRejected
         ? (record.rejectedAt != null ? formatArabicDate(record.rejectedAt!) : formatArabicDate(DateTime.now()))
@@ -1399,18 +1415,19 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
     final creatorHeader = _buildHeaderCell('منفذ الفحص', ttfBold);
     final creatorCell = _buildSignatureCell(
       rawName: sampleTakerName,
-      sig: '[مُدخل البيانات]',
+      statusText: 'مكتمل ومُرسل',
       date: 'التاريخ: $entryDate',
       ttf: ttf,
       ttfBold: ttfBold,
       isLandscape: isLandscape,
       signatureBytes: creatorSignatureBytes,
+      isApproved: true,
     );
 
     final qsHeader = _buildHeaderCell('مشرف الجودة', ttfBold);
     final qsCell = _buildSignatureCell(
       rawName: qsName,
-      sig: qsSig,
+      statusText: qsStatusText,
       date: 'التاريخ: $qsDate',
       ttf: ttf,
       ttfBold: ttfBold,
@@ -1418,12 +1435,13 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
       signatureBytes: isQsRejected ? rejectedSignatureBytes : (effectiveQsDone ? qsSignatureBytes : null),
       signatureHash: qsSignatureHash,
       isRejected: isQsRejected,
+      isApproved: effectiveQsDone && !isQsRejected,
     );
 
     final qmHeader = _buildHeaderCell('مدير الجودة', ttfBold, subtitle: isClosed ? 'معتمد سابقاً' : null);
     final qmCell = _buildSignatureCell(
       rawName: qmName,
-      sig: qmSig,
+      statusText: qmStatusText,
       date: 'التاريخ: $qmDate',
       ttf: ttf,
       ttfBold: ttfBold,
@@ -1433,13 +1451,14 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
           : ((isQmRejected || wasQmRejected) ? rejectedSignatureBytes : ((isQmDone || wasQmApproved) ? qmSignatureBytes : null)),
       signatureHash: qmSignatureHash,
       isRejected: (isQmRejected || wasQmRejected) && !isClosed,
-      isVoided: isClosed || wasQmApproved,
+      isApproved: isQmDone && !isClosed && !(isQmRejected || wasQmRejected) && !wasQmApproved && !isGmRejected,
+      isVoided: isClosed || wasQmApproved || isGmRejected,
     );
 
     final gmHeader = _buildHeaderCell('اعتماد مدير المصنع', ttfBold, subtitle: isClosed ? 'معتمد بعد إجراء تصحيحي' : null);
     final gmCell = _buildSignatureCell(
       rawName: gmName,
-      sig: gmSig,
+      statusText: gmStatusText,
       date: 'التاريخ: $gmDate',
       ttf: ttf,
       ttfBold: ttfBold,
@@ -1447,6 +1466,7 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
       signatureBytes: isGmRejected ? rejectedSignatureBytes : (isGmDone ? gmSignatureBytes : null),
       signatureHash: gmSignatureHash,
       isRejected: isGmRejected,
+      isApproved: (isClosed || isGmDone) && !isGmRejected,
     );
 
     final bool hasTableSignatures = report.sections?.any((sec) =>
@@ -1563,7 +1583,7 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
   /// مع تراكب التوقيع كلياً فوق النصوص بأسلوب الختم الحي (Zero Layout Shift)
   static pw.Widget _buildSignatureCell({
     required String rawName,
-    required String sig,
+    required String statusText,
     required String date,
     required pw.Font ttf,
     required pw.Font ttfBold,
@@ -1572,15 +1592,9 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
     String? signatureHash,
     bool isRejected = false,
     bool isVoided = false,
+    bool isApproved = false,
   }) {
     final parsed = ArabicPdfService.splitNameAndRole(rawName);
-
-    final pdfRed = PdfColor.fromHex('#C62828');
-    final pdfAmber = PdfColor.fromHex('#E65100');
-    
-    final titleColor = isRejected ? pdfRed : (isVoided ? pdfAmber : PdfColors.black);
-    final dateColor = isRejected ? pdfRed : (isVoided ? pdfAmber : PdfColors.grey700);
-    final sigColor = isRejected ? pdfRed : (isVoided ? pdfAmber : (sig.contains('معتمد') ? PdfColors.green900 : PdfColors.black));
 
     return pw.Container(
       padding: pw.EdgeInsets.symmetric(horizontal: 4, vertical: isLandscape ? 3 : 5),
@@ -1588,40 +1602,42 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
         alignment: pw.Alignment.center,
         children: [
           pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
             mainAxisSize: pw.MainAxisSize.min,
             children: [
               pw.Text(
                 'الاسم: ${parsed.name}',
-                textAlign: pw.TextAlign.right,
-                style: pw.TextStyle(font: ttfBold, fontSize: 8, color: titleColor),
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(font: ttfBold, fontSize: 8),
               ),
               if (parsed.role != null) ...[
                 pw.SizedBox(height: 1),
                 pw.Text(
                   parsed.role!,
-                  textAlign: pw.TextAlign.right,
-                  style: pw.TextStyle(font: ttf, fontSize: 6.5, color: titleColor),
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(font: ttf, fontSize: 6.5, color: PdfColors.grey700),
                 ),
               ],
               pw.SizedBox(height: 2),
-              pw.Text(
-                sig,
-                textAlign: pw.TextAlign.right,
-                style: pw.TextStyle(
-                  font: ttf,
-                  fontSize: 8,
-                  color: sigColor,
-                ),
+              ArabicPdfService.statusBadge(
+                text: statusText,
+                isApproved: isApproved && !isRejected && !isVoided,
+                isRejected: isRejected,
+                fontSize: 7.5,
+                font: ttfBold,
               ),
               pw.SizedBox(height: 2),
-              pw.Text(date, textAlign: pw.TextAlign.right, style: pw.TextStyle(font: ttf, fontSize: 8, color: titleColor)),
+              pw.Text(
+                date,
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(font: ttf, fontSize: 7, color: isRejected ? const PdfColor.fromInt(0xFFB71C1C) : PdfColors.grey700),
+              ),
               if (signatureHash != null && signatureHash.isNotEmpty) ...[
                 pw.SizedBox(height: 1),
                 pw.Text(
                   'بصمة: ${signatureHash.length > 8 ? signatureHash.substring(0, 8) : signatureHash}',
-                  textAlign: pw.TextAlign.right,
-                  style: pw.TextStyle(font: ttf, fontSize: 5.5, color: dateColor),
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(font: ttf, fontSize: 5.5, color: PdfColors.grey600),
                 ),
               ],
             ],

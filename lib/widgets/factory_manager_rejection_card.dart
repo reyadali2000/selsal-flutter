@@ -30,6 +30,7 @@ class FactoryManagerRejectionCard extends StatelessWidget {
     this.gmDecisionBy,
     this.gmDecisionNotes,
     this.progress,
+    this.rejectionCount = 0,
     this.onApprove,
     this.onReject,
     this.onView,
@@ -68,6 +69,9 @@ class FactoryManagerRejectionCard extends StatelessWidget {
   /// نسبة الإنجاز (0.0 - 1.0) إن وُجدت
   final double? progress;
 
+  /// عدد محاولات الرفض السابقة
+  final int rejectionCount;
+
   /// أزرار الإجراءات
   final VoidCallback? onApprove;
   final VoidCallback? onReject;
@@ -79,7 +83,8 @@ class FactoryManagerRejectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusColor = ApprovalStatus.color(status);
-    final canDecide =
+    final isFinal = ApprovalStatus.isFinal(status) || ApprovalStatus.isFinalRejection(status);
+    final canDecide = !isFinal &&
         (ApprovalStatus.gmCanDecide(status) || ApprovalStatus.qmCanDecide(status)) &&
         onApprove != null;
     final hasDecision = gmDecision != null && gmDecision!.isNotEmpty;
@@ -142,7 +147,8 @@ class FactoryManagerRejectionCard extends StatelessWidget {
               ],
             ),
           ),
-          if (canDecide || onReject != null || onView != null) _buildActionButtons(context),
+          if ((canDecide && (onApprove != null || onReject != null)) || onView != null)
+            _buildActionButtons(context),
         ],
       ),
     );
@@ -190,6 +196,29 @@ class FactoryManagerRejectionCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
+          if (!ApprovalStatus.isFinalRejection(status) &&
+              (status == 'Rejected' ||
+                  status == 'Corrective_In_Progress' ||
+                  status == 'Pending_QM_Decision')) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: (rejectionCount >= 1 ? Colors.deepOrange : Colors.blueGrey).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: (rejectionCount >= 1 ? Colors.deepOrange : Colors.blueGrey).withValues(alpha: 0.4)),
+              ),
+              child: Text(
+                'المحاولة ${rejectionCount + 1} من 2',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: rejectionCount >= 1 ? Colors.deepOrange.shade800 : Colors.blueGrey.shade800,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
             decoration: BoxDecoration(
@@ -456,6 +485,7 @@ class FactoryManagerRejectionCard extends StatelessWidget {
       case 'Pending_GM_Decision':
         return 0.85;
       case 'Rejected_By_GM':
+      case 'Rejected_Final':
         return 1.0;
       case 'Closed':
       case 'Approved':
@@ -564,7 +594,9 @@ class FactoryManagerRejectionCard extends StatelessWidget {
       case 'Corrective_In_Progress':
         return 'الإجراء التصحيحي قيد التنفيذ من قبل المسؤول المختص وبانتظار توثيقه ورفعه لمدير الجودة.';
       case 'Rejected_By_GM':
-        return 'تم رفض الإجراء التصحيحي قطعياً، وانتهت دورة الاعتماد بالرفض النهائي للتقرير دون إمكانية اتخاذ إجراء تصحيحي آخر.';
+        return 'تم رفض الإجراء التصحيحي قطعياً من قبل مدير المصنع، وانتهت دورة الاعتماد بالرفض النهائي للتقرير دون إمكانية إرجاعه لأي شخص آخر.';
+      case 'Rejected_Final':
+        return 'تم رفض التقرير قطعياً وأُغلقت دورة الاعتماد بشكل نهائي دون إمكانية التعديل أو إعادة التقديم.';
       case 'Rejected':
         return 'متابعة تنفيذ الإجراء التصحيحي وتوثيقه لرفعه لمدير الجودة.';
       default:

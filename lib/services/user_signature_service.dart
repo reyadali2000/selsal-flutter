@@ -156,6 +156,11 @@ class UserSignatureService {
         .trim();
     String effectiveName = cleanName.isNotEmpty ? cleanName : userName.trim();
 
+    // تجريد الألقاب والبادئات لضمان مطابقة الاسم الفعلي في قاعدة البيانات
+    final strippedOfTitles = effectiveName
+        .replaceAll(RegExp(r'^(دكتور|د\.?|أستاذ|أ\.?|مهندس|م\.?|المهندس|الدكتور|الأستاذ)\s+', caseSensitive: false), '')
+        .trim();
+
     const usernameMap = {
       'basheer_fs': 'م. بشير القدسي',
       'salah': 'م. صلاح الجابري',
@@ -174,17 +179,24 @@ class UserSignatureService {
     };
     if (usernameMap.containsKey(effectiveName.toLowerCase())) {
       effectiveName = usernameMap[effectiveName.toLowerCase()]!;
+    } else if (usernameMap.containsKey(strippedOfTitles.toLowerCase())) {
+      effectiveName = usernameMap[strippedOfTitles.toLowerCase()]!;
     }
+
+    // التحقق مما إذا كان الاسم مجرد مسمى وظيفي عام وليس اسماً شخصياً
+    final isGenericRole = effectiveName == 'مدير الجودة' ||
+        effectiveName == 'مدير المصنع' ||
+        effectiveName == 'مشرف الجودة' ||
+        effectiveName == 'مفتش الجودة' ||
+        effectiveName == 'أخصائي الجودة' ||
+        effectiveName == 'منفذ الفحص';
 
     if (!forceRefresh) {
       if (userId != null && userId > 0 && _signatureCache.containsKey(userId)) {
         return _signatureCache[userId]!;
       }
-      if (effectiveName.isNotEmpty && _signatureCache.containsKey(effectiveName)) {
+      if (!isGenericRole && effectiveName.isNotEmpty && _signatureCache.containsKey(effectiveName)) {
         return _signatureCache[effectiveName]!;
-      }
-      if (userName.isNotEmpty && _signatureCache.containsKey(userName)) {
-        return _signatureCache[userName]!;
       }
     }
 
@@ -203,22 +215,24 @@ class UserSignatureService {
               final sFullName = sessionUser.fullName.trim();
               final sUsername = sessionUser.username.trim();
               if (sFullName == effectiveName ||
+                  sFullName == strippedOfTitles ||
                   sUsername.toLowerCase() == effectiveName.toLowerCase() ||
-                  sFullName.contains(effectiveName) ||
-                  effectiveName.contains(sFullName)) {
+                  sUsername.toLowerCase() == strippedOfTitles.toLowerCase() ||
+                  sFullName.contains(strippedOfTitles) ||
+                  strippedOfTitles.contains(sFullName)) {
                 effectiveUserId = sessionUser.id;
               }
             }
           }
         } catch (_) {}
 
-        // 2. البحث بالاسم الكامل أو اسم المستخدم في جدول Users
+        // 2. البحث بالاسم الكامل (مع اللقب أو مجرداً) أو اسم المستخدم في جدول Users
         if (effectiveUserId == null) {
           final userRows = await db.query(
             'Users',
             columns: ['id', 'full_name', 'job_title', 'role'],
-            where: 'full_name LIKE ? OR username = ?',
-            whereArgs: ['%$effectiveName%', effectiveName],
+            where: 'full_name LIKE ? OR full_name LIKE ? OR username = ? OR username = ?',
+            whereArgs: ['%$effectiveName%', '%$strippedOfTitles%', effectiveName, strippedOfTitles],
             limit: 1,
           );
           if (userRows.isNotEmpty) {
@@ -268,8 +282,7 @@ class UserSignatureService {
         final customBytes = await getCustomUserSignatureBytes(effectiveUserId);
         if (customBytes != null) {
           _signatureCache[effectiveUserId] = customBytes;
-          if (effectiveName.isNotEmpty) _signatureCache[effectiveName] = customBytes;
-          if (userName.isNotEmpty) _signatureCache[userName] = customBytes;
+          if (!isGenericRole && effectiveName.isNotEmpty) _signatureCache[effectiveName] = customBytes;
           return customBytes;
         }
       }
@@ -285,11 +298,8 @@ class UserSignatureService {
     if (effectiveUserId != null) {
       _signatureCache[effectiveUserId] = generated;
     }
-    if (effectiveName.isNotEmpty) {
+    if (!isGenericRole && effectiveName.isNotEmpty) {
       _signatureCache[effectiveName] = generated;
-    }
-    if (userName.isNotEmpty) {
-      _signatureCache[userName] = generated;
     }
     return generated;
   }

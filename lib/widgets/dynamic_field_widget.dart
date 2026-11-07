@@ -26,6 +26,71 @@ class DynamicFieldWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!field.isVisible) return const SizedBox.shrink();
 
+    final Color? headerCol = field.headerColor;
+    final Color? valueCol = field.valueColor;
+
+    if (headerCol != null || valueCol != null) {
+      final borderCol = headerCol ?? Colors.blueGrey.shade300;
+      return Container(
+        margin: const EdgeInsets.symmetric(vertical: 6.0),
+        decoration: BoxDecoration(
+          color: valueCol ?? Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: borderCol.withValues(alpha: 0.5), width: 1.2),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (headerCol != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: headerCol,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(6.8),
+                    topRight: Radius.circular(6.8),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        field.label + (field.isRequired ? ' *' : ''),
+                        style: TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13.5,
+                          color: headerCol.computeLuminance() > 0.5 ? Colors.black87 : Colors.white,
+                        ),
+                      ),
+                    ),
+                    if (field.unit != null && field.unit!.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          field.unit!,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: headerCol.computeLuminance() > 0.5 ? Colors.black87 : Colors.white,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
+              child: _buildFieldByType(context),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: _buildFieldByType(context),
@@ -233,26 +298,28 @@ class DynamicFieldWidget extends StatelessWidget {
   Widget _buildRadio(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final options = field.options;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          field.label,
-          style: TextStyle(
-            fontFamily: AppTheme.fontFamily,
-            fontWeight: FontWeight.bold,
-            color: isDark ? AppColors.darkInk : AppColors.ink,
+    return RadioGroup<String>(
+      groupValue: initialValue?.toString(),
+      onChanged: (val) => onChanged(val),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            field.label,
+            style: TextStyle(
+              fontFamily: AppTheme.fontFamily,
+              fontWeight: FontWeight.bold,
+              color: isDark ? AppColors.darkInk : AppColors.ink,
+            ),
           ),
-        ),
-        ...options.map((option) {
-          return RadioListTile<String>(
-            title: Text(option, style: const TextStyle(fontFamily: AppTheme.fontFamily)),
-            value: option,
-            groupValue: initialValue?.toString(),
-            onChanged: (val) => onChanged(val),
-          );
-        }),
-      ],
+          ...options.map((option) {
+            return RadioListTile<String>(
+              title: Text(option, style: const TextStyle(fontFamily: AppTheme.fontFamily)),
+              value: option,
+            );
+          }),
+        ],
+      ),
     );
   }
 

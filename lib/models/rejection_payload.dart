@@ -34,6 +34,9 @@ class RejectionPayload {
   /// الموعد المستهدف للإغلاق
   final DateTime? dueDate;
 
+  /// هل الرفض قاطع ومباشر لعدم الجدوى من أي إجراء تصحيحي؟
+  final bool isDefinitive;
+
   const RejectionPayload({
     required this.reason,
     this.category,
@@ -44,6 +47,7 @@ class RejectionPayload {
     this.correctiveAction,
     this.correctiveOwner,
     this.dueDate,
+    this.isDefinitive = false,
   });
 
   /// إنشاء نسخة محدثة من الحزمة
@@ -57,6 +61,7 @@ class RejectionPayload {
     String? correctiveAction,
     String? correctiveOwner,
     DateTime? dueDate,
+    bool? isDefinitive,
   }) {
     return RejectionPayload(
       reason: reason ?? this.reason,
@@ -68,6 +73,7 @@ class RejectionPayload {
       correctiveAction: correctiveAction ?? this.correctiveAction,
       correctiveOwner: correctiveOwner ?? this.correctiveOwner,
       dueDate: dueDate ?? this.dueDate,
+      isDefinitive: isDefinitive ?? this.isDefinitive,
     );
   }
 

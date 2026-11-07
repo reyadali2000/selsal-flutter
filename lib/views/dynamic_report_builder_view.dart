@@ -125,8 +125,9 @@ class DynamicReportBuilderView extends StatelessWidget {
               maxLines: 2,
             ),
             const SizedBox(height: 16),
-            if (controller.categories.isNotEmpty)
-              Obx(() => AppDropdown<int>(
+            Obx(() => controller.categories.isEmpty
+                ? const SizedBox.shrink()
+                : AppDropdown<int>(
                 label: 'القسم',
                 isRequired: true,
                 value: controller.categoryId.value,
@@ -506,7 +507,7 @@ class DynamicReportBuilderView extends StatelessWidget {
           return ReorderableListView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      onReorder: (oldIndex, newIndex) {
+      onReorderItem: (oldIndex, newIndex) {
         controller.reorderSection(oldIndex, newIndex);
       },
       children: controller.sections.map((section) {
@@ -571,7 +572,7 @@ class DynamicReportBuilderView extends StatelessWidget {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   buildDefaultDragHandles: false,
-                  onReorder: (oldIndex, newIndex) {
+                  onReorderItem: (oldIndex, newIndex) {
                     controller.reorderFields(section.id!, oldIndex, newIndex);
                   },
                   children: sectionFields.map((field) {
@@ -723,6 +724,8 @@ class DynamicReportBuilderView extends StatelessWidget {
     final typeCtrl = initialType.obs;
     final optionsCtrl = TextEditingController(text: DynamicReportField.optionsToText(existingField?.options ?? []));
     final requiredCtrl = (existingField?.isRequired ?? false).obs;
+    final headerColorCtrl = (existingField?.headerBgColor ?? '').obs;
+    final valueColorCtrl = (existingField?.valueBgColor ?? '').obs;
 
     // إعدادات التحقق والتنسيق
     final hintCtrl = TextEditingController(text: existingField?.hint ?? '');
@@ -1649,6 +1652,153 @@ class DynamicReportBuilderView extends StatelessWidget {
                   value: requiredCtrl.value,
                   onChanged: (val) => requiredCtrl.value = val,
                 )),
+                const Divider(height: 24),
+                // --- قسم تخصيص ألوان البند والتفاصيل ---
+                Text('تنسيق الألوان (البند والتفاصيل):', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                // لون عنوان البند
+                Text('لون عنوان البند (الرأس):', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                const SizedBox(height: 6),
+                Obx(() {
+                  final presets = [
+                    {'name': 'تلقائي (أزرق هادئ)', 'hex': '', 'color': const Color(0xFFBDD7EE)},
+                    {'name': 'أزرق رسمي', 'hex': '#BDD7EE', 'color': const Color(0xFFBDD7EE)},
+                    {'name': 'أزرق خفيف', 'hex': '#D9E1F2', 'color': const Color(0xFFD9E1F2)},
+                    {'name': 'رمادي ناعم', 'hex': '#E2E8F0', 'color': const Color(0xFFE2E8F0)},
+                    {'name': 'أخضر هادئ', 'hex': '#C6F6D5', 'color': const Color(0xFFC6F6D5)},
+                    {'name': 'برتقالي فاتح', 'hex': '#FEEBC8', 'color': const Color(0xFFFEEBC8)},
+                    {'name': 'أصفر باستيل', 'hex': '#FEFCBF', 'color': const Color(0xFFFEFCBF)},
+                    {'name': 'وردي ناعم', 'hex': '#FED7E2', 'color': const Color(0xFFFED7E2)},
+                    {'name': 'أرجواني', 'hex': '#E9D8FD', 'color': const Color(0xFFE9D8FD)},
+                  ];
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: presets.map((p) {
+                        final hex = p['hex'] as String;
+                        final isSel = headerColorCtrl.value.toUpperCase() == hex.toUpperCase();
+                        final col = p['color'] as Color;
+                        return GestureDetector(
+                          onTap: () => headerColorCtrl.value = hex,
+                          child: Container(
+                            margin: const EdgeInsets.only(left: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: col,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: isSel ? Colors.blue.shade900 : Colors.grey.shade400,
+                                width: isSel ? 2 : 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (isSel) const Icon(Icons.check, size: 14, color: Colors.black87),
+                                Text(p['name'] as String, style: const TextStyle(fontSize: 11, color: Colors.black87)),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  );
+                }),
+                const SizedBox(height: 12),
+                // لون خلفية التفاصيل
+                Text('لون خلفية التفاصيل / القيمة:', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                const SizedBox(height: 6),
+                Obx(() {
+                  final presets = [
+                    {'name': 'تلقائي (أبيض)', 'hex': '', 'color': Colors.white},
+                    {'name': 'أبيض ناصع', 'hex': '#FFFFFF', 'color': Colors.white},
+                    {'name': 'رمادي فائق النعومة', 'hex': '#F8FAFC', 'color': const Color(0xFFF8FAFC)},
+                    {'name': 'عاجي هادئ', 'hex': '#FFFFF0', 'color': const Color(0xFFFFFFF0)},
+                    {'name': 'نعناعي خفيف', 'hex': '#F0FDF4', 'color': const Color(0xFFF0FDF4)},
+                    {'name': 'أصفر ناعم', 'hex': '#FFFBEB', 'color': const Color(0xFFFFFBEB)},
+                  ];
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: presets.map((p) {
+                        final hex = p['hex'] as String;
+                        final isSel = valueColorCtrl.value.toUpperCase() == hex.toUpperCase();
+                        final col = p['color'] as Color;
+                        return GestureDetector(
+                          onTap: () => valueColorCtrl.value = hex,
+                          child: Container(
+                            margin: const EdgeInsets.only(left: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: col,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: isSel ? Colors.blue.shade900 : Colors.grey.shade400,
+                                width: isSel ? 2 : 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (isSel) const Icon(Icons.check, size: 14, color: Colors.black87),
+                                Text(p['name'] as String, style: const TextStyle(fontSize: 11, color: Colors.black87)),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  );
+                }),
+                const SizedBox(height: 10),
+                // بطاقة المعاينة الحية
+                Obx(() {
+                  Color hCol = const Color(0xFFBDD7EE);
+                  if (headerColorCtrl.value.isNotEmpty) {
+                    final clean = headerColorCtrl.value.replaceAll('#', '').trim();
+                    final val = int.tryParse(clean.length == 6 ? 'FF$clean' : clean, radix: 16);
+                    if (val != null) hCol = Color(val);
+                  }
+                  Color vCol = Colors.white;
+                  if (valueColorCtrl.value.isNotEmpty) {
+                    final clean = valueColorCtrl.value.replaceAll('#', '').trim();
+                    final val = int.tryParse(clean.length == 6 ? 'FF$clean' : clean, radix: 16);
+                    if (val != null) vCol = Color(val);
+                  }
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: vCol,
+                      border: Border.all(color: Colors.grey.shade400, width: 0.8),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: Text(
+                              'معاينة: محتوى التفاصيل والقيمة هنا...',
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: Container(
+                            padding: const EdgeInsets.all(8.0),
+                            color: hCol,
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              labelCtrl.text.isNotEmpty ? labelCtrl.text : 'عنوان البند',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
               ],
             ),
           ),
@@ -1723,6 +1873,28 @@ class DynamicReportBuilderView extends StatelessWidget {
                   return;
                 }
                 defaultValue = text;
+              }
+
+              // دمج إعدادات ألوان البند والتفاصيل
+              Map<String, dynamic> vMap = {};
+              if (validationJson != null) {
+                try {
+                  final decoded = jsonDecode(validationJson);
+                  if (decoded is Map<String, dynamic>) vMap = Map<String, dynamic>.from(decoded);
+                } catch (_) {}
+              }
+              if (headerColorCtrl.value.trim().isNotEmpty) {
+                vMap['header_bg_color'] = headerColorCtrl.value.trim();
+              } else {
+                vMap.remove('header_bg_color');
+              }
+              if (valueColorCtrl.value.trim().isNotEmpty) {
+                vMap['value_bg_color'] = valueColorCtrl.value.trim();
+              } else {
+                vMap.remove('value_bg_color');
+              }
+              if (vMap.isNotEmpty) {
+                validationJson = jsonEncode(vMap);
               }
 
               final savedField = DynamicReportField(

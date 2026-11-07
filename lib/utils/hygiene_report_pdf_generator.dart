@@ -46,6 +46,8 @@ class HygieneReportPdfGenerator {
       );
     }
 
+    await ArabicPdfService.initialize();
+
     return ArabicPdfService.generate(
       title: 'قائمة التفتيش على النظافة الشخصية - $reportDate',
       pageFormat: PdfPageFormat.a4.landscape,

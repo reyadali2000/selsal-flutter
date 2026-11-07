@@ -25,6 +25,51 @@ class RawMaterialsApiService extends GetxService {
     return null;
   }
 
+  /// تحديث حالة الاعتماد والرفض مع استرجاع كائن الاستجابة الكامل [ApiResponse]
+  Future<ApiResponse> updateStatusWithResponse(
+    int id,
+    String status, {
+    String? approvedBy,
+    String? rejectionReason,
+    String? rejectionCategory,
+    String? severityLevel,
+    String? rejectionNotes,
+    String? affectedProducts,
+    String? immediateAction,
+    String? correctiveAction,
+    String? correctiveOwner,
+    String? correctiveDueDate,
+    String? gmDecision,
+    String? gmDecisionBy,
+    String? gmDecisionNotes,
+    int? rejectionCount,
+  }) async {
+    final body = <String, dynamic>{
+      'status': status,
+      if (approvedBy != null) 'approvedBy': approvedBy,
+      if (rejectionReason != null) 'rejectionReason': rejectionReason,
+      if (rejectionCategory != null) 'rejectionCategory': rejectionCategory,
+      if (severityLevel != null) 'severityLevel': severityLevel,
+      if (rejectionNotes != null) 'rejectionNotes': rejectionNotes,
+      if (affectedProducts != null) 'affectedProducts': affectedProducts,
+      if (immediateAction != null) 'immediateAction': immediateAction,
+      if (correctiveAction != null) 'correctiveAction': correctiveAction,
+      if (correctiveOwner != null) 'correctiveOwner': correctiveOwner,
+      if (correctiveDueDate != null) 'correctiveDueDate': correctiveDueDate,
+      if (gmDecision != null) 'gmDecision': gmDecision,
+      if (gmDecisionBy != null) 'gmDecisionBy': gmDecisionBy,
+      if (gmDecisionNotes != null) 'gmDecisionNotes': gmDecisionNotes,
+      if (rejectionCount != null) 'rejectionCount': rejectionCount,
+    };
+    return await _client.writeQueued(
+      'PUT',
+      '/RawMaterials/reports/$id/status',
+      body: body,
+      entityType: 'raw_materials_status',
+      entityId: id,
+    );
+  }
+
   /// تحديث حالة الاعتماد والرفض لتقرير المواد الأولية (يدعم الأوفلاين والمزامنة التلقائية)
   Future<bool> updateStatus(
     int id,
@@ -42,6 +87,7 @@ class RawMaterialsApiService extends GetxService {
     String? gmDecision,
     String? gmDecisionBy,
     String? gmDecisionNotes,
+    int? rejectionCount,
   }) async {
     final body = <String, dynamic>{
       'status': status,
@@ -58,6 +104,7 @@ class RawMaterialsApiService extends GetxService {
       if (gmDecision != null) 'gmDecision': gmDecision,
       if (gmDecisionBy != null) 'gmDecisionBy': gmDecisionBy,
       if (gmDecisionNotes != null) 'gmDecisionNotes': gmDecisionNotes,
+      if (rejectionCount != null) 'rejectionCount': rejectionCount,
     };
     final response = await _client.writeQueued(
       'PUT',
@@ -68,6 +115,44 @@ class RawMaterialsApiService extends GetxService {
     );
     return response.isSuccess;
   }
+
+  /// الاسم المتوافق لتحديث الاعتماد مع استرجاع ApiResponse
+  Future<ApiResponse> updateApprovalWithResponse(
+    int id,
+    String status, {
+    String? approvedBy,
+    String? rejectionReason,
+    String? rejectionCategory,
+    String? severityLevel,
+    String? rejectionNotes,
+    String? affectedProducts,
+    String? immediateAction,
+    String? correctiveAction,
+    String? correctiveOwner,
+    String? correctiveDueDate,
+    String? gmDecision,
+    String? gmDecisionBy,
+    String? gmDecisionNotes,
+    int? rejectionCount,
+  }) =>
+      updateStatusWithResponse(
+        id,
+        status,
+        approvedBy: approvedBy,
+        rejectionReason: rejectionReason,
+        rejectionCategory: rejectionCategory,
+        severityLevel: severityLevel,
+        rejectionNotes: rejectionNotes,
+        affectedProducts: affectedProducts,
+        immediateAction: immediateAction,
+        correctiveAction: correctiveAction,
+        correctiveOwner: correctiveOwner,
+        correctiveDueDate: correctiveDueDate,
+        gmDecision: gmDecision,
+        gmDecisionBy: gmDecisionBy,
+        gmDecisionNotes: gmDecisionNotes,
+        rejectionCount: rejectionCount,
+      );
 
   /// الاسم المتوافق لتحديث الاعتماد
   Future<bool> updateApproval(
@@ -86,6 +171,7 @@ class RawMaterialsApiService extends GetxService {
     String? gmDecision,
     String? gmDecisionBy,
     String? gmDecisionNotes,
+    int? rejectionCount,
   }) =>
       updateStatus(
         id,
@@ -103,6 +189,7 @@ class RawMaterialsApiService extends GetxService {
         gmDecision: gmDecision,
         gmDecisionBy: gmDecisionBy,
         gmDecisionNotes: gmDecisionNotes,
+        rejectionCount: rejectionCount,
       );
 
   /// حفظ أو رفع تقرير فحص مواد أولية (يدعم العمل أوفلاين والمزامنة التلقائية)

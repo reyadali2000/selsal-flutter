@@ -22,6 +22,7 @@ class RejectReportDialog extends StatefulWidget {
     required this.reportTitle,
     this.reportSubtitle,
     this.initialPayload,
+    this.rejectionCount = 0,
   });
 
   /// عنوان التقرير المرفوض (مثال: "تقرير فحص المياه الخام #12")
@@ -33,12 +34,16 @@ class RejectReportDialog extends StatefulWidget {
   /// قيم سابقة عند تعديل بيانات الرفض
   final RejectionPayload? initialPayload;
 
+  /// عدد مرات الرفض السابقة لهذا التقرير
+  final int rejectionCount;
+
   /// فتح الشاشة كـ Dialog وإرجاع الحزمة كاملة
   static Future<RejectionPayload?> show(
     BuildContext context, {
     required String reportTitle,
     String? reportSubtitle,
     RejectionPayload? initialPayload,
+    int rejectionCount = 0,
   }) {
     return showDialog<RejectionPayload>(
       context: context,
@@ -47,6 +52,7 @@ class RejectReportDialog extends StatefulWidget {
         reportTitle: reportTitle,
         reportSubtitle: reportSubtitle,
         initialPayload: initialPayload,
+        rejectionCount: rejectionCount,
       ),
     );
   }
@@ -66,6 +72,7 @@ class _RejectReportDialogState extends State<RejectReportDialog> {
   String? _selectedCategory;
   String? _selectedSeverity;
   DateTime? _dueDate;
+  bool _isDefinitive = false;
   bool _isSubmitting = false;
 
   @override
@@ -81,6 +88,7 @@ class _RejectReportDialogState extends State<RejectReportDialog> {
     _selectedCategory = init?.category;
     _selectedSeverity = init?.severity;
     _dueDate = init?.dueDate;
+    _isDefinitive = init?.isDefinitive ?? (widget.rejectionCount >= 1);
   }
 
   @override
@@ -139,9 +147,10 @@ class _RejectReportDialogState extends State<RejectReportDialog> {
       notes: _notesController.text.trim(),
       affectedProducts: _affectedController.text.trim(),
       immediateAction: _immediateController.text.trim(),
-      correctiveAction: _correctiveController.text.trim(),
-      correctiveOwner: _ownerController.text.trim(),
-      dueDate: _dueDate,
+      correctiveAction: _isDefinitive ? null : _correctiveController.text.trim(),
+      correctiveOwner: _isDefinitive ? null : _ownerController.text.trim(),
+      dueDate: _isDefinitive ? null : _dueDate,
+      isDefinitive: _isDefinitive,
     );
 
     setState(() => _isSubmitting = false);
@@ -209,6 +218,10 @@ class _RejectReportDialogState extends State<RejectReportDialog> {
                   ),
                 ],
 
+                // نوع الرفض (إجراء تصحيحي أم رفض قاطع)
+                _buildRejectionTypeSelector(),
+                const SizedBox(height: 12),
+
                 // 1) سبب الرفض (إلزامي)
                 _sectionLabel(text: 'سبب الرفض *', icon: Icons.error_outline),
                 _buildTextField(
@@ -254,31 +267,77 @@ class _RejectReportDialogState extends State<RejectReportDialog> {
                 ),
                 const SizedBox(height: 12),
 
-                // 5) الإجراء التصحيحي
-                _sectionLabel(text: 'الإجراء التصحيحي المطلوب', icon: Icons.build_circle),
-                _buildTextField(
-                  controller: _correctiveController,
-                  hint: 'مثال: إعادة الفحص، تحليل السبب الجذري، استبدال المادة...',
-                  maxLines: 2,
-                ),
-                const SizedBox(height: 12),
+                if (!_isDefinitive) ...[
+                  // 5) الإجراء التصحيحي
+                  _sectionLabel(text: 'الإجراء التصحيحي المطلوب', icon: Icons.build_circle),
+                  _buildTextField(
+                    controller: _correctiveController,
+                    hint: 'مثال: إعادة الفحص، تحليل السبب الجذري، استبدال المادة...',
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 12),
 
-                // 6) المسؤول + الموعد المستهدف
-                Row(
-                  children: [
-                    Expanded(child: _sectionLabel(text: 'المسؤول عن التصحيح', icon: Icons.person_outline)),
-                    const SizedBox(width: 12),
-                    Expanded(child: _sectionLabel(text: 'الموعد المستهدف', icon: Icons.event_available)),
-                  ],
-                ),
-                Row(
-                  children: [
-                    Expanded(child: _buildOwnerField()),
-                    const SizedBox(width: 12),
-                    Expanded(child: _buildDueDateField()),
-                  ],
-                ),
-                const SizedBox(height: 12),
+                  // 6) المسؤول + الموعد المستهدف
+                  Row(
+                    children: [
+                      Expanded(child: _sectionLabel(text: 'المسؤول عن التصحيح', icon: Icons.person_outline)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _sectionLabel(text: 'الموعد المستهدف', icon: Icons.event_available)),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      Expanded(child: _buildOwnerField()),
+                      const SizedBox(width: 12),
+                      Expanded(child: _buildDueDateField()),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ] else ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFEBEE),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.red.shade300),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.block, color: Colors.red.shade800, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'رفض قاطع ونهائي',
+                                style: TextStyle(
+                                  fontFamily: 'Tajawal',
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.red.shade900,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'لن يتم طلب أي إجراء تصحيحي. سيتم إغلاق دورة التقرير بالرفض القاطع أو رفع القرار لمدير المصنع للاعتماد الإداري للإغلاق.',
+                                style: TextStyle(
+                                  fontFamily: 'Tajawal',
+                                  fontSize: 11.5,
+                                  color: Colors.red.shade800,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
 
                 // 7) ملاحظات وأدلة إضافية
                 _sectionLabel(text: 'ملاحظات / أدلة / مرفقات', icon: Icons.attach_file),
@@ -293,18 +352,20 @@ class _RejectReportDialogState extends State<RejectReportDialog> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.amber.shade50,
+                    color: _isDefinitive ? Colors.red.shade50 : Colors.amber.shade50,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.amber.shade200),
+                    border: Border.all(color: _isDefinitive ? Colors.red.shade200 : Colors.amber.shade200),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline, size: 16, color: Colors.amber.shade800),
+                      Icon(Icons.info_outline, size: 16, color: _isDefinitive ? Colors.red.shade800 : Colors.amber.shade800),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'سيتم إشعار مدير المصنع بالرفض والإجراء التصحيحي لاعتماده.',
-                          style: TextStyle(fontFamily: 'Tajawal', fontSize: 11, color: Colors.amber.shade900),
+                          _isDefinitive
+                              ? 'سيتم تسجيل الرفض القاطع وإحالته لمدير المصنع إذا كان التقرير يتطلب اعتماده، أو إغلاقه نهائياً فوراً.'
+                              : 'سيتم إشعار مدير المصنع بالرفض والإجراء التصحيحي لاعتماده.',
+                          style: TextStyle(fontFamily: 'Tajawal', fontSize: 11, color: _isDefinitive ? Colors.red.shade900 : Colors.amber.shade900),
                         ),
                       ),
                     ],
@@ -490,6 +551,151 @@ class _RejectReportDialogState extends State<RejectReportDialog> {
                   fontWeight: hasDate ? FontWeight.bold : FontWeight.normal,
                   color: hasDate ? Colors.green.shade800 : Colors.grey.shade600,
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRejectionTypeSelector() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isLockedSecondAttempt = widget.rejectionCount >= 1;
+
+    if (isLockedSecondAttempt) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFEBEE),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.shade400, width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(color: Colors.red.shade700, shape: BoxShape.circle),
+              child: const Icon(Icons.gavel, color: Colors.white, size: 16),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'المحاولة الثانية — رفض قاطع وإغلاق',
+                    style: TextStyle(
+                      fontFamily: 'Tajawal',
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12.5,
+                      color: Color(0xFFB71C1C),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'سبق رفض التقرير وإتاحة فرصة للتصحيح. هذا الرفض قاطع ونهائي ولا يسمح بمهلة جديدة.',
+                    style: TextStyle(fontFamily: 'Tajawal', fontSize: 11, color: Colors.red.shade900),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel(text: 'نوع الرفض', icon: Icons.tune),
+        Row(
+          children: [
+            Expanded(
+              child: _buildTypeOption(
+                title: 'طلب إجراء تصحيحي',
+                subtitle: 'إتاحة فرصة لتصحيح الخلل',
+                icon: Icons.build_circle_outlined,
+                isSelected: !_isDefinitive,
+                activeColor: const Color(0xFF052659),
+                onTap: () => setState(() => _isDefinitive = false),
+                isDark: isDark,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildTypeOption(
+                title: 'رفض قاطع ومباشر',
+                subtitle: 'لعدم الجدوى من التصحيح',
+                icon: Icons.block,
+                isSelected: _isDefinitive,
+                activeColor: const Color(0xFFC62828),
+                onTap: () => setState(() => _isDefinitive = true),
+                isDark: isDark,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTypeOption({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required bool isSelected,
+    required Color activeColor,
+    required VoidCallback onTap,
+    required bool isDark,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? activeColor.withValues(alpha: isDark ? 0.25 : 0.08)
+              : (isDark ? AppColors.darkSurfaceElevated : Colors.grey.shade50),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? activeColor : (isDark ? AppColors.darkBorder : Colors.grey.shade300),
+            width: isSelected ? 1.8 : 1.0,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+              size: 16,
+              color: isSelected ? activeColor : Colors.grey.shade500,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontFamily: 'Tajawal',
+                      fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      color: isSelected ? activeColor : (isDark ? AppColors.darkInk : Colors.black87),
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontFamily: 'Tajawal',
+                      fontSize: 10,
+                      color: isDark ? AppColors.darkMuted : Colors.grey.shade600,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

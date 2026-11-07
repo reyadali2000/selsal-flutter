@@ -13,6 +13,7 @@ import 'settings_view.dart';
 import 'health_affairs_view.dart';
 
 import '../widgets/notification_bell.dart';
+import '../widgets/sync_status_indicator.dart';
 import '../widgets/permission_guard.dart';
 import '../services/biometric_settings_service.dart';
 import '../services/user_session_service.dart';
@@ -146,6 +147,8 @@ class _HomeViewState extends State<HomeView> {
                                           ),
                                         ),
                                       ),
+                                      const SyncStatusIndicator(),
+                                      const SizedBox(width: 8),
                                       const NotificationBell(),
                                     ],
                                   ),
@@ -236,6 +239,8 @@ class _HomeViewState extends State<HomeView> {
                                       ),
                                     ),
                                   ),
+                                  const SyncStatusIndicator(),
+                                  const SizedBox(width: 4),
                                   const NotificationBell(),
                                 ],
                               ),

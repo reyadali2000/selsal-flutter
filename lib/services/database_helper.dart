@@ -582,6 +582,12 @@ class DatabaseHelper {
       await _safeAddColumn(db, 'WaterQualityLogs', 'gm_decision_by', 'TEXT');
       await _safeAddColumn(db, 'WaterQualityLogs', 'gm_decision_at', 'TEXT');
       await _safeAddColumn(db, 'WaterQualityLogs', 'gm_decision_notes', 'TEXT');
+      await _safeAddColumn(
+        db,
+        'WaterQualityLogs',
+        'rejection_count',
+        'INTEGER DEFAULT 0',
+      );
     } catch (e) {
       debugPrint('Error in _ensureWaterQualityColumns: $e');
     }
@@ -639,6 +645,38 @@ class DatabaseHelper {
       await _safeAddColumn(db, 'dr_records', 'gm_decision_by', 'TEXT');
       await _safeAddColumn(db, 'dr_records', 'gm_decision_at', 'TEXT');
       await _safeAddColumn(db, 'dr_records', 'gm_decision_notes', 'TEXT');
+      await _safeAddColumn(db, 'dr_records', 'client_uuid', 'TEXT');
+      await _safeAddColumn(
+        db,
+        'dr_records',
+        'rejection_count',
+        'INTEGER DEFAULT 0',
+      );
+
+      // فك قيد المفتاح الأجنبي عن dr_values إن وجد لمنع خطأ SQLite (code 787)
+      final sqlCheck = await db.rawQuery(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='dr_values'",
+      );
+      if (sqlCheck.isNotEmpty) {
+        final ddl = sqlCheck.first['sql']?.toString() ?? '';
+        if (ddl.contains('REFERENCES dr_fields')) {
+          await db.execute('PRAGMA foreign_keys = OFF');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS dr_values_new (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              record_id INTEGER NOT NULL,
+              field_id INTEGER NOT NULL,
+              value TEXT
+            )
+          ''');
+          await db.execute(
+            'INSERT INTO dr_values_new (id, record_id, field_id, value) SELECT id, record_id, field_id, value FROM dr_values',
+          );
+          await db.execute('DROP TABLE dr_values');
+          await db.execute('ALTER TABLE dr_values_new RENAME TO dr_values');
+          await db.execute('PRAGMA foreign_keys = ON');
+        }
+      }
     } catch (_) {}
   }
 
@@ -1216,9 +1254,30 @@ class DatabaseHelper {
           where: 'record_id = ?',
           whereArgs: [effectiveId],
         );
+      } else if (record.id != null && record.id! < 0) {
+        // تحديث سجل محلي محفوظ أوفلاين مسبقاً بنفس المعرف السالب
+        effectiveId = record.id!;
+        rowMap['id'] = effectiveId;
+        await txn.insert(
+          'dr_records',
+          rowMap,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        await txn.delete(
+          'dr_values',
+          where: 'record_id = ?',
+          whereArgs: [effectiveId],
+        );
       } else {
-        rowMap.remove('id');
-        effectiveId = await txn.insert('dr_records', rowMap);
+        // إنشاء سجل محلي أوفلاين جديد: نولّد له معرّفاً سالباً فريداً
+        // لمنع أي تداخل مع المعرّفات الموجبة القادمة من السيرفر
+        effectiveId = -DateTime.now().millisecondsSinceEpoch;
+        rowMap['id'] = effectiveId;
+        await txn.insert(
+          'dr_records',
+          rowMap,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
 
       for (final v in values) {
@@ -1235,6 +1294,82 @@ class DatabaseHelper {
   /// يحفظ نتائج الفحوصات الميكروبيولوجية فقط لتقرير موجود (المرحلة الثانية).
   /// يُحذف ما كان مُسجَّلاً سابقاً من نتائج الميكروبيولوجي لهذا التقرير
   /// ثم تُدرج النتائج الجديدة دون المساس بباقي نتائج الفحوصات.
+  /// تحديث المعرف المؤقت السالب لسجل أوفلاين إلى المعرف الحقيقي الموجب القادم من السيرفر بعد المزامنة
+  Future<void> updateDynamicReportRecordId({
+    required int oldLocalId,
+    required int newServerId,
+  }) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.rawUpdate(
+        'UPDATE dr_records SET id = ? WHERE id = ?',
+        [newServerId, oldLocalId],
+      );
+      await txn.rawUpdate(
+        'UPDATE dr_values SET record_id = ? WHERE record_id = ?',
+        [newServerId, oldLocalId],
+      );
+    });
+  }
+
+  /// تحديث المعرف المؤقت لتقرير فحص المياه ونتائجه إلى المعرف الجديد من السيرفر
+  Future<void> updateWaterQualityLogId({
+    required int oldLocalId,
+    required int newServerId,
+  }) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.rawUpdate(
+        'UPDATE WaterQualityLogs SET id = ? WHERE id = ?',
+        [newServerId, oldLocalId],
+      );
+      await txn.rawUpdate(
+        'UPDATE WaterQualityResults SET log_id = ? WHERE log_id = ?',
+        [newServerId, oldLocalId],
+      );
+    });
+  }
+
+  /// تحديث المعرف المؤقت لتقرير النظافة وقوائم الفحص التابعة له
+  Future<void> updateHygieneReportId({
+    required int oldLocalId,
+    required int newServerId,
+  }) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.rawUpdate(
+        'UPDATE HygieneReports SET id = ? WHERE id = ?',
+        [newServerId, oldLocalId],
+      );
+      await txn.rawUpdate(
+        'UPDATE HygieneLogs SET report_id = ? WHERE report_id = ?',
+        [newServerId, oldLocalId],
+      );
+    });
+  }
+
+  /// تحديث المعرف المؤقت لتقرير المواد الأولية والنتائج التابعة له
+  Future<void> updateRawMaterialReportId({
+    required int oldLocalId,
+    required int newServerId,
+  }) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.rawUpdate(
+        'UPDATE RawMaterialReports SET id = ? WHERE id = ?',
+        [newServerId, oldLocalId],
+      );
+      await txn.rawUpdate(
+        'UPDATE RawMaterialGeneralResults SET report_id = ? WHERE report_id = ?',
+        [newServerId, oldLocalId],
+      );
+      await txn.rawUpdate(
+        'UPDATE RawMaterialAnnexResults SET report_id = ? WHERE report_id = ?',
+        [newServerId, oldLocalId],
+      );
+    });
+  }
+
   Future<void> saveMicrobiologicalResults(
     int logId,
     List<WaterQualityResult> microResults,
@@ -2463,9 +2598,11 @@ class DatabaseHelper {
     String? microRejectedBy,
     DateTime? microRejectedAt,
     String? microRejectionAction,
+    int? rejectionCount,
   }) async {
     final db = await instance.database;
     final Map<String, dynamic> data = {'approval_status': approvalStatus};
+    if (rejectionCount != null) data['rejection_count'] = rejectionCount;
     if (qmApprovedBy != null) data['qm_approved_by'] = qmApprovedBy;
     if (qmApprovedAt != null) {
       data['qm_approved_at'] = qmApprovedAt.toIso8601String();
@@ -2795,6 +2932,12 @@ class DatabaseHelper {
     await _safeAddColumn(db, 'HygieneReports', 'gm_decision_by', 'TEXT');
     await _safeAddColumn(db, 'HygieneReports', 'gm_decision_at', 'TEXT');
     await _safeAddColumn(db, 'HygieneReports', 'gm_decision_notes', 'TEXT');
+    await _safeAddColumn(
+      db,
+      'HygieneReports',
+      'rejection_count',
+      'INTEGER DEFAULT 0',
+    );
   }
 
   Future<void> updateHygieneReportApproval({
@@ -2818,10 +2961,12 @@ class DatabaseHelper {
     String? gmDecisionBy,
     DateTime? gmDecisionAt,
     String? gmDecisionNotes,
+    int? rejectionCount,
   }) async {
     final db = await instance.database;
     await _ensureHygieneReportTables(db);
     final Map<String, dynamic> data = {'approval_status': approvalStatus};
+    if (rejectionCount != null) data['rejection_count'] = rejectionCount;
     if (qmApprovedBy != null) data['qm_approved_by'] = qmApprovedBy;
     if (qmApprovedAt != null) {
       data['qm_approved_at'] = qmApprovedAt.toIso8601String();
@@ -3122,6 +3267,12 @@ class DatabaseHelper {
     await _safeAddColumn(db, 'RawMaterialReports', 'rejected_quantity', 'TEXT');
     await _safeAddColumn(db, 'RawMaterialReports', 'branch_id', 'INTEGER');
     await _safeAddColumn(db, 'RawMaterialReports', 'branch_name', 'TEXT');
+    await _safeAddColumn(
+      db,
+      'RawMaterialReports',
+      'rejection_count',
+      'INTEGER DEFAULT 0',
+    );
   }
 
   Future<int> saveRawMaterialReport({
@@ -3282,11 +3433,13 @@ class DatabaseHelper {
     String? gmDecisionBy,
     DateTime? gmDecisionAt,
     String? gmDecisionNotes,
+    int? rejectionCount,
   }) async {
     final db = await instance.database;
     await _ensureRawMaterialTables(db);
 
     final Map<String, dynamic> data = {'approval_status': approvalStatus};
+    if (rejectionCount != null) data['rejection_count'] = rejectionCount;
     if (qmApprovedBy != null) data['qm_approved_by'] = qmApprovedBy;
     if (qmApprovedAt != null) {
       data['qm_approved_at'] = qmApprovedAt.toIso8601String();
@@ -3454,9 +3607,7 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         record_id INTEGER NOT NULL,
         field_id INTEGER NOT NULL,
-        value TEXT,
-        FOREIGN KEY (record_id) REFERENCES dr_records(id) ON DELETE CASCADE,
-        FOREIGN KEY (field_id) REFERENCES dr_fields(id) ON DELETE CASCADE
+        value TEXT
       )
     ''');
 

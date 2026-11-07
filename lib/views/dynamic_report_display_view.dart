@@ -276,22 +276,23 @@ class DynamicReportDisplayController extends GetxController {
               status: rec.approvalStatus,
             );
         final qmUser =
-            rec.qmApprovedBy ??
-            (!isGmRejector ? rec.rejectedBy : null);
+            rec.qmApprovedBy ?? (!isGmRejector ? rec.rejectedBy : null);
         if (qmUser != null && qmUser.isNotEmpty) {
-          newQmSig = await UserSignatureService.instance.getSignatureBytesForUser(
-            userName: qmUser,
-            userPosition: 'مدير توكيد ورقابة الجودة',
-          );
+          newQmSig = await UserSignatureService.instance
+              .getSignatureBytesForUser(
+                userName: qmUser,
+                userPosition: 'مدير توكيد ورقابة الجودة',
+              );
         }
       }
       if (newGmSig == null && isGmDone) {
         final gmUser = rec.gmDecisionBy ?? rec.gmApprovedBy;
         if (gmUser != null && gmUser.isNotEmpty) {
-          newGmSig = await UserSignatureService.instance.getSignatureBytesForUser(
-            userName: gmUser,
-            userPosition: 'مدير مصنع وادي العين',
-          );
+          newGmSig = await UserSignatureService.instance
+              .getSignatureBytesForUser(
+                userName: gmUser,
+                userPosition: 'مدير مصنع وادي العين',
+              );
         }
       }
 
@@ -485,7 +486,6 @@ class DynamicReportDisplayController extends GetxController {
 
     isProcessingAction.value = true;
     try {
-
       await DynamicReportsApiService.to.addApproval(
         recordId: recordId,
         approvalStatus: nextStatus,
@@ -671,8 +671,19 @@ class DynamicReportDisplayController extends GetxController {
     final rejectorName =
         '${session.currentUserName.value} (${session.roleTitle})';
     final userId = session.currentUser.value?.id;
-    final newStatus =
-        payload.hasCorrectiveAction ? 'Corrective_In_Progress' : 'Rejected';
+    final curCount = currentRecord.value?.rejectionCount ?? 0;
+    final isSingleLevel = report.value?.approvalType == 'single_level';
+    final int newCount;
+    final String newStatus;
+
+    if (payload.isDefinitive) {
+      newCount = (curCount < 2) ? 2 : curCount + 1;
+      newStatus = isSingleLevel ? ApprovalStatus.rejectedFinal : ApprovalStatus.pendingGMDecision;
+    } else {
+      newCount = (curCount == 0) ? 1 : curCount + 1;
+      newStatus =
+          payload.hasCorrectiveAction ? 'Corrective_In_Progress' : 'Rejected';
+    }
 
     isProcessingAction.value = true;
     try {
@@ -693,6 +704,7 @@ class DynamicReportDisplayController extends GetxController {
         correctiveAction: payload.correctiveAction,
         correctiveOwner: payload.correctiveOwner,
         correctiveDueDate: payload.dueDate,
+        rejectionCount: newCount,
       );
 
       await loadData();
@@ -860,8 +872,12 @@ class DynamicReportDisplayController extends GetxController {
     final qmFull = '$qmName (مدير الجودة)';
     final userId = session.currentUser.value?.id;
     final isSingleLevel = report.value?.approvalType == 'single_level';
-    final targetStatus =
-        isSingleLevel ? 'Rejected_By_GM' : 'Corrective_In_Progress';
+    final curCount = currentRecord.value?.rejectionCount ?? 0;
+    final bool isDefinitive = curCount >= 1 || isSingleLevel;
+    final int newCount = isDefinitive ? (curCount < 2 ? 2 : curCount + 1) : 1;
+    final targetStatus = isDefinitive
+        ? (isSingleLevel ? ApprovalStatus.rejectedFinal : ApprovalStatus.pendingGMDecision)
+        : 'Corrective_In_Progress';
 
     isProcessingAction.value = true;
     try {
@@ -871,10 +887,12 @@ class DynamicReportDisplayController extends GetxController {
         actorUserId: userId,
         actorName: qmName,
         actorPosition: session.roleTitle,
+        rejectionReason: currentRecord.value?.rejectionReason ?? notes,
         gmDecision: 'Rejected',
         gmDecisionBy: qmFull,
         gmDecisionAt: DateTime.now(),
         gmDecisionNotes: notes,
+        rejectionCount: newCount,
       );
 
       await loadData();
@@ -882,31 +900,38 @@ class DynamicReportDisplayController extends GetxController {
       if (Get.isRegistered<NotificationService>()) {
         NotificationService.to.sendNotification(
           title:
-              isSingleLevel
-                  ? 'رفض نهائي للإجراء التصحيحي وإغلاق التقرير'
-                  : 'مدير الجودة يرفض الإجراء التصحيحي للتعديل',
+              isDefinitive
+                  ? (isSingleLevel
+                      ? 'رفض نهائي للإجراء التصحيحي وإغلاق التقرير'
+                      : 'تم استنفاذ المحاولات — رفض قاطع ومحال لمدير المصنع')
+                  : 'مدير الجودة يرفض الإجراء التصحيحي للتعديل (محاولة 1 من 2)',
           body:
-              isSingleLevel
-                  ? 'رفض $qmFull الإجراء التصحيحي لتقرير (${report.value?.name ?? ""}) سجل (#$recordId) وأُغلق التقرير بالرفض النهائي. السبب: $notes'
+              isDefinitive
+                  ? (isSingleLevel
+                      ? 'رفض $qmFull الإجراء التصحيحي لتقرير (${report.value?.name ?? ""}) سجل (#$recordId) وأُغلق التقرير نهائياً بالرفض القاطع: $notes'
+                      : 'رفض $qmFull الإجراء التصحيحي للمرة الثانية وأُحيل لمدير المصنع للرفض القاطع: $notes')
                   : 'رفض $qmFull الإجراء التصحيحي لتقرير (${report.value?.name ?? ""}) سجل (#$recordId) وطلب تعديله: $notes',
           reportId: recordId,
           reportCategory: 'Dynamic Report',
-          targetRole: 'QualitySpecialist',
+          targetRole: isDefinitive ? (isSingleLevel ? 'All' : 'FactoryManager') : 'QualitySpecialist',
           branchId: currentRecord.value?.branchId,
         );
       }
 
       Get.snackbar(
-        isSingleLevel
-            ? 'تم الرفض النهائي وإغلاق التقرير'
-            : 'تمت إعادة الإجراء التصحيحي للمسؤول',
-        isSingleLevel
-            ? 'أُغلق التقرير نهائياً بالرفض القاطع'
-            : 'تمت إعادة التقرير للمسؤول لتعديل وتوثيق إجراء تصحيحي مناسب',
+        isDefinitive
+            ? (isSingleLevel ? 'تم الرفض النهائي وإغلاق التقرير' : 'رفض قاطع — تم الرفع لمدير المصنع')
+            : 'تمت إعادة الإجراء التصحيحي للمسؤول (محاولة 1 من 2)',
+        isDefinitive
+            ? (isSingleLevel
+                ? 'أُغلق التقرير نهائياً بالرفض القاطع لمدير الجودة'
+                : 'تم استنفاذ محاولتي التصحيح، ورُفع التقرير لمدير المصنع للرفض القاطع')
+            : 'تمت إعادة التقرير للمسؤول لتعديل وتوثيق إجراء تصحيحي مناسب (متبقية فرصة أخيرة)',
         backgroundColor:
-            isSingleLevel ? const Color(0xFF8B0000) : const Color(0xFFE65100),
+            isDefinitive ? const Color(0xFF8B0000) : const Color(0xFFE65100),
         colorText: Colors.white,
         snackPosition: SnackPosition.TOP,
+        duration: const Duration(seconds: 4),
       );
     } catch (e) {
       Get.snackbar(
@@ -1010,6 +1035,9 @@ class DynamicReportDisplayController extends GetxController {
             : 'مدير المصنع';
     final gmFull = '$gmName (مدير المصنع)';
     final userId = session.currentUser.value?.id;
+    final curCount = currentRecord.value?.rejectionCount ?? 0;
+    final int newCount = (curCount < 2) ? 2 : curCount;
+    final originalQmReason = currentRecord.value?.rejectionReason;
 
     isProcessingAction.value = true;
     try {
@@ -1019,10 +1047,12 @@ class DynamicReportDisplayController extends GetxController {
         actorUserId: userId,
         actorName: gmName,
         actorPosition: session.roleTitle,
+        rejectionReason: originalQmReason,
         gmDecision: 'Rejected',
         gmDecisionBy: gmFull,
         gmDecisionAt: DateTime.now(),
         gmDecisionNotes: notes,
+        rejectionCount: newCount,
       );
 
       await loadData();
@@ -1945,7 +1975,57 @@ class DynamicReportDisplayView extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 1),
+                const SizedBox(height: 3),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        isRejected
+                            ? const Color(0xFFFFEBEE)
+                            : (isVoided
+                                ? const Color(0xFFFFF8E1)
+                                : (isApproved
+                                    ? const Color(0xFFE8F5E9)
+                                    : const Color(0xFFFFF8E1))),
+                    border: Border.all(
+                      color:
+                          isRejected
+                              ? const Color(0xFFC62828)
+                              : (isVoided
+                                  ? const Color(0xFFFFB300)
+                                  : (isApproved
+                                      ? const Color(0xFF2E7D32)
+                                      : const Color(0xFFF57F17))),
+                      width: 0.8,
+                    ),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    isRejected
+                        ? 'مرفوض'
+                        : (isVoided
+                            ? 'معتمد سابقاً (أُلغي برفض الإدارة)'
+                            : (isApproved ? 'معتمد' : 'بانتظار الاعتماد')),
+                    style: TextStyle(
+                      fontFamily: 'Tajawal',
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      color:
+                          isRejected
+                              ? const Color(0xFFB71C1C)
+                              : (isVoided
+                                  ? const Color(0xFFB78103)
+                                  : (isApproved
+                                      ? const Color(0xFF1B5E20)
+                                      : const Color(0xFFE65100))),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 2),
                 Text(
                   dateStr,
                   style: TextStyle(
@@ -2473,6 +2553,7 @@ class DynamicReportDisplayView extends StatelessWidget {
           gmDecision: record.gmDecision,
           gmDecisionBy: record.gmDecisionBy,
           gmDecisionNotes: record.gmDecisionNotes,
+          rejectionCount: record.rejectionCount,
           onApprove: canDecide ? () => _showGmDecisionDialog(controller) : null,
           onReject: canDecide ? () => _showGmDecisionDialog(controller) : null,
         ),
@@ -2535,7 +2616,8 @@ class DynamicReportDisplayView extends StatelessWidget {
     if (record == null) return;
     final status = record.approvalStatus;
     final isQmStage = status == 'Pending_QM_Decision';
-    final isSingleLevel = controller.report.value?.approvalType == 'single_level';
+    final isSingleLevel =
+        controller.report.value?.approvalType == 'single_level';
 
     final decision = await GmDecisionDialog.show(
       Get.context!,
@@ -2543,10 +2625,12 @@ class DynamicReportDisplayView extends StatelessWidget {
       correctiveAction: record.correctiveAction ?? 'غير محدد',
       correctiveOwner: record.correctiveOwner ?? 'غير محدد',
       severity: record.severityLevel,
-      decisionTitle: isQmStage
-          ? 'قرار مدير الجودة على الإجراء التصحيحي'
-          : 'القرار النهائي لمدير المصنع على الإجراء التصحيحي',
+      decisionTitle:
+          isQmStage
+              ? 'قرار مدير الجودة على الإجراء التصحيحي'
+              : 'القرار النهائي لمدير المصنع على الإجراء التصحيحي',
       isFinalStage: isQmStage ? isSingleLevel : true,
+      rejectionCount: record.rejectionCount,
     );
 
     if (decision == null) return;
@@ -2575,6 +2659,7 @@ class DynamicReportDisplayView extends StatelessWidget {
       reportTitle:
           '${controller.report.value?.name ?? "تقرير"} #${record?.id ?? "?"}',
       reportSubtitle: record?.effectiveBranchName,
+      rejectionCount: record?.rejectionCount ?? 0,
     );
 
     if (payload == null) return;

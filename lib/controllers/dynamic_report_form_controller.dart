@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:intl/intl.dart';
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +13,15 @@ import '../services/api/dynamic_reports_api_service.dart';
 
 
 class DynamicReportFormController extends GetxController {
+  /// توليد معرّف فريد للتقرير من جهة العميل (RFC 4122 v4 UUID) لمنع التكرار (Idempotency)
+  String _generateClientUuid() {
+    final random = Random.secure();
+    final values = List<int>.generate(16, (i) => random.nextInt(256));
+    values[6] = (values[6] & 0x0f) | 0x40; // v4
+    values[8] = (values[8] & 0x3f) | 0x80; // variant
+    final hex = values.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
   final formKey = GlobalKey<FormState>();
   
   var isLoading = true.obs;
@@ -440,8 +450,11 @@ class DynamicReportFormController extends GetxController {
       final activeShift = await FactoryShiftsService.instance.getActiveShiftNow(userBranchId);
       final String activeShiftName = activeShift?.name ?? 'الوردية الأولى';
 
+      final String recordClientUuid = existingRecord.value?.clientUuid ?? _generateClientUuid();
+
       final record = DynamicReportRecord(
         id: existingRecord.value?.id,
+        clientUuid: recordClientUuid,
         reportId: report.value!.id!,
         createdBy: userName,
         createdAt: existingRecord.value?.createdAt ?? DateTime.now(),
@@ -464,6 +477,7 @@ class DynamicReportFormController extends GetxController {
       
       final recordWithDataJson = DynamicReportRecord(
         id: record.id,
+        clientUuid: record.clientUuid,
         reportId: record.reportId,
         createdBy: record.createdBy,
         createdAt: record.createdAt,
@@ -483,7 +497,9 @@ class DynamicReportFormController extends GetxController {
       final int savedDraftId = await DynamicReportsApiService.to.saveRecord(recordWithDataJson, values);
       final recordToCache = savedDraftId > 0
           ? recordWithDataJson.copyWith(id: savedDraftId)
-          : recordWithDataJson;
+          : (recordWithDataJson.id != null && recordWithDataJson.id! < 0
+              ? recordWithDataJson
+              : recordWithDataJson.copyWith(id: -DateTime.now().millisecondsSinceEpoch));
       await DatabaseHelper.instance.saveDynamicReportRecordLocal(
         recordToCache,
         values,
@@ -517,7 +533,8 @@ class DynamicReportFormController extends GetxController {
       return;
     }
 
-    if (!formKey.currentState!.validate()) {
+    final form = formKey.currentState;
+    if (form == null || !form.validate()) {
       Get.snackbar(
         'تنبيه',
         'يرجى تعبئة جميع الحقول المطلوبة بشكل صحيح قبل الإرسال للاعتماد',
@@ -553,9 +570,12 @@ class DynamicReportFormController extends GetxController {
       final activeShift = await FactoryShiftsService.instance.getActiveShiftNow(userBranchId);
       final String activeShiftName = activeShift?.name ?? 'الوردية الأولى';
 
+      final String recordClientUuid = existingRecord.value?.clientUuid ?? _generateClientUuid();
+
       // Prepare Record
       final record = DynamicReportRecord(
         id: existingRecord.value?.id,
+        clientUuid: recordClientUuid,
         reportId: report.value!.id!,
         createdBy: userName,
         createdAt: existingRecord.value?.createdAt ?? DateTime.now(),
@@ -582,6 +602,7 @@ class DynamicReportFormController extends GetxController {
 
       final recordWithDataJson = DynamicReportRecord(
         id: record.id,
+        clientUuid: record.clientUuid,
         reportId: record.reportId,
         createdBy: record.createdBy,
         createdAt: record.createdAt,
@@ -601,16 +622,18 @@ class DynamicReportFormController extends GetxController {
 
       final int? previousLocalId = existingRecord.value?.id;
       int savedId = await DynamicReportsApiService.to.saveRecord(recordWithDataJson, values);
-      final bool isQueuedOffline = savedId == 0;
+      final bool isQueuedOffline = savedId <= 0;
       final recordToCache = savedId > 0
           ? recordWithDataJson.copyWith(id: savedId)
-          : recordWithDataJson;
+          : (recordWithDataJson.id != null && recordWithDataJson.id! < 0
+              ? recordWithDataJson
+              : recordWithDataJson.copyWith(id: -DateTime.now().millisecondsSinceEpoch));
       final localSavedId = await DatabaseHelper.instance.saveDynamicReportRecordLocal(
         recordToCache,
         values,
         previousLocalId: previousLocalId,
       );
-      if (savedId == 0) {
+      if (savedId <= 0) {
         savedId = localSavedId;
       }
 

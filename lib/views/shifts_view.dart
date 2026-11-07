@@ -558,7 +558,7 @@ class ShiftsView extends StatelessWidget {
                       children: [
                         Switch.adaptive(
                           value: shift.isActive,
-                          activeColor: const Color(0xFF007791),
+                          activeThumbColor: const Color(0xFF007791),
                           onChanged: (val) => controller.toggleShift(shift, val),
                         ),
                         PopupMenuButton<String>(

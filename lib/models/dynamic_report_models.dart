@@ -489,6 +489,54 @@ class DynamicReportField {
     return [];
   }
 
+  /// لون خلفية عنوان الحقل (البند) بصيغة Hex (مثل #BDD7EE)
+  String? get headerBgColor {
+    if (validationJson != null && validationJson!.isNotEmpty) {
+      try {
+        final d = jsonDecode(validationJson!);
+        if (d is Map && d['header_bg_color'] != null) {
+          final s = d['header_bg_color'].toString().trim();
+          if (s.isNotEmpty) return s;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// لون خلفية محتوى الحقل (التفاصيل) بصيغة Hex (مثل #FFFFFF)
+  String? get valueBgColor {
+    if (validationJson != null && validationJson!.isNotEmpty) {
+      try {
+        final d = jsonDecode(validationJson!);
+        if (d is Map && d['value_bg_color'] != null) {
+          final s = d['value_bg_color'].toString().trim();
+          if (s.isNotEmpty) return s;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// لون رأس الحقل كـ Flutter Color
+  Color? get headerColor {
+    final hex = headerBgColor;
+    if (hex == null || hex.isEmpty) return null;
+    var c = hex.replaceAll('#', '').trim();
+    if (c.length == 6) c = 'FF$c';
+    final val = int.tryParse(c, radix: 16);
+    return val != null ? Color(val) : null;
+  }
+
+  /// لون تفاصيل الحقل كـ Flutter Color
+  Color? get valueColor {
+    final hex = valueBgColor;
+    if (hex == null || hex.isEmpty) return null;
+    var c = hex.replaceAll('#', '').trim();
+    if (c.length == 6) c = 'FF$c';
+    final val = int.tryParse(c, radix: 16);
+    return val != null ? Color(val) : null;
+  }
+
   /// يحوّل نص الخيارات إلى قائمة.
   /// الفاصل الأساسي هو السطر الجديد (يدعم الخيارات التي تحتوي فاصلة).
   /// لأسباب التوافق مع البيانات القديمة: إذا كان السطر مفرداً ويحوي فاصلة
@@ -872,6 +920,7 @@ class DynamicReportRecord {
   final String? gmDecisionBy;
   final DateTime? gmDecisionAt;
   final String? gmDecisionNotes;
+  final int rejectionCount;
 
   final int? branchId;
   final String? branchName;
@@ -888,6 +937,7 @@ class DynamicReportRecord {
   final String? currentStepName;
   final String? summaryNotes;
   final String? dataJson; // المحرك الهجين: حقل JSON لحفظ كل بيانات التقرير
+  final String? clientUuid; // معرّف فريد للتقرير من جهة العميل لمنع التكرار (Idempotency)
 
   String get effectiveBranchName => branchName != null && branchName!.isNotEmpty
       ? branchName!
@@ -945,6 +995,7 @@ class DynamicReportRecord {
     this.gmDecisionBy,
     this.gmDecisionAt,
     this.gmDecisionNotes,
+    this.rejectionCount = 0,
     this.branchId,
     this.branchName,
     this.shiftName,
@@ -959,6 +1010,7 @@ class DynamicReportRecord {
     this.currentStepName,
     this.summaryNotes,
     this.dataJson,
+    this.clientUuid,
   });
 
   Map<String, dynamic> toMap() {
@@ -993,6 +1045,7 @@ class DynamicReportRecord {
       'gm_decision_by': gmDecisionBy,
       'gm_decision_at': gmDecisionAt?.toIso8601String(),
       'gm_decision_notes': gmDecisionNotes,
+      'rejection_count': rejectionCount,
       'branch_id': branchId,
       'branch_name': branchName,
       'shift_name': shiftName,
@@ -1007,6 +1060,7 @@ class DynamicReportRecord {
       'current_step_name': currentStepName,
       'summary_notes': summaryNotes,
       'data_json': dataJson,
+      'client_uuid': clientUuid,
     };
   }
 
@@ -1076,6 +1130,9 @@ class DynamicReportRecord {
           ? DateTime.tryParse((map['gm_decision_at'] ?? map['gmDecisionAt']).toString())
           : null,
       gmDecisionNotes: (map['gm_decision_notes'] ?? map['gmDecisionNotes'])?.toString(),
+      rejectionCount: (map['rejection_count'] ?? map['rejectionCount']) is int
+          ? (map['rejection_count'] ?? map['rejectionCount']) as int
+          : int.tryParse((map['rejection_count'] ?? map['rejectionCount'] ?? '0').toString()) ?? 0,
       branchId: map['branch_id'] ?? map['branchId'],
       branchName: (map['branch_name'] ?? map['branchName'])?.toString(),
       shiftName: (map['shift_name'] ?? map['shiftName'])?.toString(),
@@ -1090,6 +1147,7 @@ class DynamicReportRecord {
       currentStepName: (map['current_step_name'] ?? map['currentStepName'])?.toString(),
       summaryNotes: (map['summary_notes'] ?? map['summaryNotes'])?.toString(),
       dataJson: (map['data_json'] ?? map['dataJson'])?.toString(),
+      clientUuid: (map['client_uuid'] ?? map['clientUuid'])?.toString(),
     );
   }
 
@@ -1124,6 +1182,7 @@ class DynamicReportRecord {
     String? gmDecisionBy,
     DateTime? gmDecisionAt,
     String? gmDecisionNotes,
+    int? rejectionCount,
     int? branchId,
     String? branchName,
     String? shiftName,
@@ -1138,6 +1197,7 @@ class DynamicReportRecord {
     String? currentStepName,
     String? summaryNotes,
     String? dataJson,
+    String? clientUuid,
   }) {
     return DynamicReportRecord(
       id: id ?? this.id,
@@ -1170,6 +1230,7 @@ class DynamicReportRecord {
       gmDecisionBy: gmDecisionBy ?? this.gmDecisionBy,
       gmDecisionAt: gmDecisionAt ?? this.gmDecisionAt,
       gmDecisionNotes: gmDecisionNotes ?? this.gmDecisionNotes,
+      rejectionCount: rejectionCount ?? this.rejectionCount,
       branchId: branchId ?? this.branchId,
       branchName: branchName ?? this.branchName,
       shiftName: shiftName ?? this.shiftName,
@@ -1184,6 +1245,7 @@ class DynamicReportRecord {
       currentStepName: currentStepName ?? this.currentStepName,
       summaryNotes: summaryNotes ?? this.summaryNotes,
       dataJson: dataJson ?? this.dataJson,
+      clientUuid: clientUuid ?? this.clientUuid,
     );
   }
 }

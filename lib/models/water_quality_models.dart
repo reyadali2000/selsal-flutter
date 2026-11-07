@@ -35,6 +35,7 @@ class WaterQualityLog {
   final String? gmDecisionBy;
   final DateTime? gmDecisionAt;
   final String? gmDecisionNotes;
+  final int rejectionCount;
 
   // New fields for Raw Water & Finished Product Inspection
   final String? waterSource;
@@ -108,6 +109,7 @@ class WaterQualityLog {
     this.gmDecisionBy,
     this.gmDecisionAt,
     this.gmDecisionNotes,
+    this.rejectionCount = 0,
     this.waterSource,
     this.wellNumber,
     this.sampleTaker,
@@ -172,6 +174,7 @@ class WaterQualityLog {
     String? gmDecisionBy,
     DateTime? gmDecisionAt,
     String? gmDecisionNotes,
+    int? rejectionCount,
     String? waterSource,
     String? wellNumber,
     String? sampleTaker,
@@ -235,6 +238,7 @@ class WaterQualityLog {
       gmDecisionBy: gmDecisionBy ?? this.gmDecisionBy,
       gmDecisionAt: gmDecisionAt ?? this.gmDecisionAt,
       gmDecisionNotes: gmDecisionNotes ?? this.gmDecisionNotes,
+      rejectionCount: rejectionCount ?? this.rejectionCount,
       waterSource: waterSource ?? this.waterSource,
       wellNumber: wellNumber ?? this.wellNumber,
       sampleTaker: sampleTaker ?? this.sampleTaker,
@@ -301,6 +305,7 @@ class WaterQualityLog {
       'gm_decision_by': gmDecisionBy,
       'gm_decision_at': gmDecisionAt?.toIso8601String(),
       'gm_decision_notes': gmDecisionNotes,
+      'rejection_count': rejectionCount,
       'water_source': waterSource,
       'well_number': wellNumber,
       'sample_taker': sampleTaker,
@@ -414,6 +419,7 @@ class WaterQualityLog {
       gmDecisionBy: (json['gm_decision_by'] ?? json['gmDecisionBy']) as String?,
       gmDecisionAt: _parseNullableDate(json['gm_decision_at'] ?? json['gmDecisionAt']),
       gmDecisionNotes: (json['gm_decision_notes'] ?? json['gmDecisionNotes']) as String?,
+      rejectionCount: _parseInt(json['rejection_count'] ?? json['rejectionCount'], 0),
       waterSource: (json['water_source'] ?? json['waterSource']) as String?,
       wellNumber: (json['well_number'] ?? json['wellNumber']) as String?,
       sampleTaker: (json['sample_taker'] ?? json['sampleTaker']) as String?,

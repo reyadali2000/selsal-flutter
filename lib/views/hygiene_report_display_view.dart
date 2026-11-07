@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import '../constants/approval_status.dart';
 import '../controllers/hygiene_report_display_controller.dart';
 import '../models/hygiene_models.dart';
+import '../services/pdf/arabic_pdf_service.dart';
 import '../services/user_session_service.dart';
 import '../utils/dynamic_report_pdf_generator.dart';
 import '../widgets/factory_manager_rejection_card.dart';
@@ -548,9 +549,26 @@ class HygieneReportDisplayView extends StatelessWidget {
         children: [
           Column(
             children: [
-              Text(
-                'الاسم: $name',
-                style: const TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold, fontSize: 12),
+              Builder(
+                builder: (context) {
+                  final parsed = ArabicPdfService.splitNameAndRole(name);
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'الاسم: ${parsed.name}',
+                        style: const TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                      if (parsed.role != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          parsed.role!,
+                          style: TextStyle(fontFamily: 'Tajawal', fontSize: 10.5, color: Colors.grey.shade700),
+                        ),
+                      ],
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 8),
               Container(
@@ -1198,6 +1216,7 @@ class HygieneReportDisplayView extends StatelessWidget {
           gmDecision: controller.gmDecision.value,
           gmDecisionBy: controller.gmDecisionBy.value,
           gmDecisionNotes: controller.gmDecisionNotes.value,
+          rejectionCount: controller.rejectionCount.value,
           onApprove: canDecide ? () => _showGmDecisionDialog() : null,
           onReject: canDecide ? () => _showGmDecisionDialog() : null,
         ),
@@ -1255,6 +1274,7 @@ class HygieneReportDisplayView extends StatelessWidget {
           ? 'قرار مدير الجودة على الإجراء التصحيحي'
           : 'القرار النهائي لمدير المصنع على الإجراء التصحيحي',
       isFinalStage: !isQmStage,
+      rejectionCount: controller.rejectionCount.value,
     );
 
     if (decision == null) return;
@@ -1325,6 +1345,7 @@ class HygieneReportDisplayView extends StatelessWidget {
       context,
       reportTitle: 'تقرير فحص النظافة العامة #${controller.reportId}',
       reportSubtitle: '${controller.branchName} • التاريخ: ${controller.reportDate}',
+      rejectionCount: controller.rejectionCount.value,
     );
 
     if (payload == null) return;

@@ -1,4 +1,4 @@
-﻿import '../widgets/corrective_action_submit_dialog.dart';
+import '../widgets/corrective_action_submit_dialog.dart';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -6,6 +6,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import '../constants/approval_status.dart';
 import '../controllers/final_product_report_display_controller.dart';
 import '../models/water_quality_models.dart';
+import '../services/pdf/arabic_pdf_service.dart';
 import '../services/user_session_service.dart';
 import '../utils/dynamic_report_pdf_generator.dart';
 import '../widgets/factory_manager_rejection_card.dart';
@@ -675,6 +676,7 @@ class FinalProductReportDisplayView extends StatelessWidget {
           gmDecision: log.gmDecision,
           gmDecisionBy: log.gmDecisionBy,
           gmDecisionNotes: log.gmDecisionNotes,
+          rejectionCount: log.rejectionCount,
           onApprove: canDecide ? () => _showGmDecisionDialog() : null,
           onReject: canDecide ? () => _showGmDecisionDialog() : null,
         ),
@@ -734,6 +736,7 @@ class FinalProductReportDisplayView extends StatelessWidget {
           ? 'قرار مدير الجودة على الإجراء التصحيحي'
           : 'القرار النهائي لمدير المصنع على الإجراء التصحيحي',
       isFinalStage: !isQmStage,
+      rejectionCount: log.rejectionCount,
     );
 
     if (decision == null) return;
@@ -867,6 +870,7 @@ class FinalProductReportDisplayView extends StatelessWidget {
       reportSubtitle: log.batchNumber != null && log.batchNumber!.isNotEmpty
           ? 'رقم التشغيلة: ${log.batchNumber} • المنتج: ${log.productName ?? ""}'
           : 'المنتج: ${log.productName ?? ""}',
+      rejectionCount: log.rejectionCount,
     );
 
     if (payload == null) return;
@@ -1485,7 +1489,45 @@ class FinalProductReportDisplayView extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 1),
+                const SizedBox(height: 3),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isRejected
+                        ? const Color(0xFFFFEBEE)
+                        : (isVoided
+                            ? const Color(0xFFFFF8E1)
+                            : (isApproved ? const Color(0xFFE8F5E9) : const Color(0xFFFFF8E1))),
+                    border: Border.all(
+                      color: isRejected
+                          ? const Color(0xFFC62828)
+                          : (isVoided
+                              ? const Color(0xFFFFB300)
+                              : (isApproved ? const Color(0xFF2E7D32) : const Color(0xFFF57F17))),
+                      width: 0.8,
+                    ),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    isRejected
+                        ? 'مرفوض'
+                        : (isVoided
+                            ? 'معتمد سابقاً (أُلغي برفض الإدارة)'
+                            : (isApproved ? 'معتمد' : 'بانتظار الاعتماد')),
+                    style: TextStyle(
+                      fontFamily: 'Tajawal',
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      color: isRejected
+                          ? const Color(0xFFB71C1C)
+                          : (isVoided
+                              ? const Color(0xFFB78103)
+                              : (isApproved ? const Color(0xFF1B5E20) : const Color(0xFFE65100))),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 2),
                 Text(
                   dateStr,
                   style: TextStyle(
@@ -1614,7 +1656,7 @@ class FinalProductReportDisplayView extends StatelessWidget {
           ),
           TableRow(
             children: [
-              _buildSigBox(sampleTakerName, '[معتمد إلكترونياً]', entryDate, controller.inspectorSignatureBytes.value),
+              _buildSigBox(sampleTakerName, 'مكتمل ومُرسل', entryDate, controller.inspectorSignatureBytes.value),
               _buildSigBox(
                 qmName,
                 qmSig,
@@ -1639,49 +1681,96 @@ class FinalProductReportDisplayView extends StatelessWidget {
 
   Widget _buildSigBox(String name, String sig, String date, [Uint8List? signatureBytes, bool isRejected = false, bool isVoided = false]) {
     final isApproved = sig.contains('معتمد') || sig.contains('مكتمل');
+    final cleanSig = sig.replaceAll('[', '').replaceAll(']', '').replaceAll('التوقيع:', '').trim();
+    final badgeText = cleanSig.isNotEmpty ? cleanSig : (isRejected ? 'مرفوض' : (isVoided ? 'معتمد سابقاً (أُلغي برفض الإدارة)' : (isApproved ? 'معتمد' : 'بانتظار الاعتماد')));
+
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: Stack(
         alignment: Alignment.center,
         children: [
           Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(
-                'الاسم: $name',
-                style: TextStyle(
-                  fontFamily: 'Tajawal',
-                  fontSize: 11,
-                  fontWeight: isRejected ? FontWeight.bold : FontWeight.normal,
-                  color: isRejected ? Colors.red.shade800 : Colors.black87,
-                ),
+              Builder(
+                builder: (context) {
+                  final parsed = ArabicPdfService.splitNameAndRole(name);
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'الاسم: ${parsed.name}',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: isRejected ? const Color(0xFFB71C1C) : Colors.black87,
+                        ),
+                      ),
+                      if (parsed.role != null) ...[
+                        const SizedBox(height: 1.5),
+                        Text(
+                          parsed.role!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'Tajawal',
+                            fontSize: 9.5,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 4),
-              Text(
-                'التوقيع: $sig',
-                style: TextStyle(
-                  fontFamily: 'Tajawal',
-                  fontSize: 11,
-                  fontWeight: isRejected ? FontWeight.bold : FontWeight.normal,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
                   color: isRejected
-                      ? Colors.red.shade800
+                      ? const Color(0xFFFFEBEE)
                       : (isVoided
-                          ? Colors.orange.shade900
-                          : (isApproved ? Colors.green.shade800 : Colors.blueGrey)),
+                          ? const Color(0xFFFFF8E1)
+                          : (isApproved ? const Color(0xFFE8F5E9) : const Color(0xFFFFF8E1))),
+                  border: Border.all(
+                    color: isRejected
+                        ? const Color(0xFFC62828)
+                        : (isVoided
+                            ? const Color(0xFFFFB300)
+                            : (isApproved ? const Color(0xFF2E7D32) : const Color(0xFFF57F17))),
+                    width: 0.8,
+                  ),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  badgeText,
+                  style: TextStyle(
+                    fontFamily: 'Tajawal',
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: isRejected
+                        ? const Color(0xFFB71C1C)
+                        : (isVoided
+                            ? const Color(0xFFB78103)
+                            : (isApproved ? const Color(0xFF1B5E20) : const Color(0xFFE65100))),
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 'التاريخ: $date',
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   fontFamily: 'Tajawal',
-                  fontSize: 11,
-                  color: isRejected ? Colors.red.shade800 : Colors.black87,
+                  fontSize: 10,
+                  color: isRejected ? const Color(0xFFB71C1C) : Colors.grey.shade700,
                 ),
               ),
             ],
           ),
-          if (signatureBytes != null)
+          if (signatureBytes != null && (isApproved || isRejected || isVoided))
             Positioned.fill(
               child: Opacity(
                 opacity: 0.42,

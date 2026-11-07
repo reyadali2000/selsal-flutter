@@ -42,9 +42,10 @@ class DynamicReportsApiService extends GetxService {
     DateTime? qmApprovedAt,
     DateTime? gmApprovedAt,
     DateTime? gmDecisionAt,
+    int? rejectionCount,
   }) async {
     final body = {
-      'action': (approvalStatus == 'Rejected' || approvalStatus == 'Rejected_By_GM')
+      'action': (approvalStatus == 'Rejected' || approvalStatus == 'Rejected_By_GM' || approvalStatus == 'Rejected_Final')
           ? 'Rejected'
           : (approvalStatus == 'Returned' ? 'Returned' : 'Approved'),
       'approval_status': approvalStatus,
@@ -64,6 +65,8 @@ class DynamicReportsApiService extends GetxService {
       'rejection_notes': rejectionNotes,
       'affected_products': affectedProducts,
       'immediate_action': immediateAction,
+      if (rejectionCount != null) 'rejection_count': rejectionCount,
+      if (rejectionCount != null) 'rejectionCount': rejectionCount,
       'acted_by': actorName,
       'acted_by_user_id': actorUserId,
       'action_by_position': actorPosition,
@@ -260,12 +263,18 @@ class DynamicReportsApiService extends GetxService {
   // --- Record CRUD ---
   Future<int> saveRecord(DynamicReportRecord record, List<DynamicReportValue> values) async {
     final body = record.toMap();
+    // إذا كان المعرف سالباً أو صفراً، فهو معرف محلي أوفلاين مؤقت؛ نزيله من الطلب
+    // حتى يتعامل السيرفر معه كإنشاء سجل جديد (INSERT) بدلاً من الكتابة فوق سجل حقيقي
+    if (record.id != null && record.id! <= 0) {
+      body.remove('id');
+    }
     body['values'] = values.map((v) => v.toMap()).toList();
     final response = await _client.writeQueued(
       'POST',
       '/DynamicReports/records',
       body: body,
       entityType: 'dr_record',
+      entityId: record.id,
     );
     if (!response.isSuccess) {
       throw Exception(response.message);
@@ -273,6 +282,11 @@ class DynamicReportsApiService extends GetxService {
     if (response.data != null) {
       if (response.data is int) return response.data as int;
       if (response.data is String) return int.tryParse(response.data.toString()) ?? 0;
+      if (response.data is Map) {
+        final val = (response.data as Map)['id'] ?? (response.data as Map)['data'];
+        if (val is int) return val;
+        if (val is String) return int.tryParse(val) ?? 0;
+      }
     }
     return record.id ?? 0;
   }

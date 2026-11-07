@@ -6,6 +6,8 @@ import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
 import '../dashboard_sync_service.dart';
+import '../database_helper.dart';
+import '../notification_service.dart';
 import 'sync_queue.dart';
 
 /// مدير المزامنة المركزي (Sync Manager)
@@ -186,8 +188,94 @@ class SyncManager extends GetxService {
         if (response.isSuccess) {
           anySucceeded = true;
           await SyncQueue.instance.markDone(id);
+
+          // إذا كان الطلب لسجل أو تقرير محلي مؤقت (معرفه سالب)،
+          // نقوم بتحديث السجل وقيمه محلياً بالمعرف الجديد المسلم من السيرفر وتحديث الطابور
+          final entityType = row['entity_type'] as String?;
+          final entityId = row['entity_id'] as int?;
+          if (entityId != null && entityId < 0) {
+            int newServerId = 0;
+            if (response.data is int) {
+              newServerId = response.data as int;
+            } else if (response.data is String) {
+              newServerId = int.tryParse(response.data.toString()) ?? 0;
+            } else if (response.data is Map) {
+              final val = (response.data as Map)['id'] ?? (response.data as Map)['data'];
+              if (val is int) newServerId = val;
+              if (val is String) newServerId = int.tryParse(val.toString()) ?? 0;
+            }
+            if (newServerId > 0) {
+              if (entityType == 'dr_record') {
+                await DatabaseHelper.instance.updateDynamicReportRecordId(
+                  oldLocalId: entityId,
+                  newServerId: newServerId,
+                );
+                await SyncQueue.instance.remapEntityId(
+                  entityType: 'dr_record',
+                  oldLocalId: entityId,
+                  newServerId: newServerId,
+                );
+
+                // إرسال إشعار الاعتماد للمشرف أو المدير بعد اكتمال المزامنة بنجاح
+                if (Get.isRegistered<NotificationService>() && body is Map) {
+                  final status = body['approval_status']?.toString();
+                  if (status != null && status != 'Draft' && status != 'Approved') {
+                    final isThreeLevel = status == 'Pending_QS';
+                    final targetRole = isThreeLevel ? 'QualitySupervisor' : 'QualityManager';
+                    final pendingLabel = isThreeLevel ? 'اعتماد مشرف الجودة' : 'اعتماد مدير الجودة';
+                    final creator = body['created_by']?.toString() ?? 'المفتش';
+                    final branchId = body['branch_id'] as int? ?? 1;
+                    try {
+                      await NotificationService.to.sendNotification(
+                        title: 'تقرير ديناميكي بانتظار $pendingLabel',
+                        body: 'تمت مزامنة تقرير سجل (#$newServerId) من قِبل ($creator) وهو بانتظار الاعتماد.',
+                        reportId: newServerId,
+                        reportCategory: 'Dynamic Report',
+                        targetRole: targetRole,
+                        branchId: branchId,
+                      );
+                    } catch (_) {}
+                  }
+                }
+              } else if (entityType == 'water_quality_log') {
+                await DatabaseHelper.instance.updateWaterQualityLogId(
+                  oldLocalId: entityId,
+                  newServerId: newServerId,
+                );
+                await SyncQueue.instance.remapEntityId(
+                  entityType: 'water_quality_status',
+                  oldLocalId: entityId,
+                  newServerId: newServerId,
+                );
+              } else if (entityType == 'hygiene_report') {
+                await DatabaseHelper.instance.updateHygieneReportId(
+                  oldLocalId: entityId,
+                  newServerId: newServerId,
+                );
+                await SyncQueue.instance.remapEntityId(
+                  entityType: 'hygiene_status',
+                  oldLocalId: entityId,
+                  newServerId: newServerId,
+                );
+              } else if (entityType == 'raw_materials_report') {
+                await DatabaseHelper.instance.updateRawMaterialReportId(
+                  oldLocalId: entityId,
+                  newServerId: newServerId,
+                );
+                await SyncQueue.instance.remapEntityId(
+                  entityType: 'raw_materials_status',
+                  oldLocalId: entityId,
+                  newServerId: newServerId,
+                );
+              }
+            }
+          }
         } else {
-          await SyncQueue.instance.markFailed(id, response.message);
+          await SyncQueue.instance.markFailed(
+            id,
+            response.message,
+            isNetworkError: response.isNetworkError,
+          );
         }
       }
 

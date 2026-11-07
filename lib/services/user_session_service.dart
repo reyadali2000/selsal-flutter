@@ -631,6 +631,26 @@ class UserSessionService extends GetxService {
 
   String get roleKey => currentUser.value?.customRoleTitle ?? UserModel.roleToString(currentRole.value);
   String get roleTitle => currentUser.value?.displayRoleTitle ?? (roleLabels[currentRole.value] ?? '');
+
+  /// اسم الموقّع منسقاً مع الصفة الوظيفية بدون أي تكرار للأقواس أو الصفات
+  String get formattedSignerName {
+    final rawName = currentUserName.value.trim();
+    final role = roleTitle.trim();
+    if (rawName.isEmpty) return role;
+
+    // إذا كان الاسم يحتوي بالفعل على نفس الصفة الوظيفية بين أقواس أو كان مطابقاً لها
+    if (rawName.contains('($role)') || rawName == role) {
+      return rawName;
+    }
+
+    // إذا كان الاسم ينتهي بالفعل بأي صفة بين أقواس (مثل: مسؤول النظام (المدير التقني))
+    if (RegExp(r'\(.*?\)\s*$').hasMatch(rawName)) {
+      return rawName;
+    }
+
+    return '$rawName ($role)';
+  }
+
   IconData get roleIcon => roleIcons[currentRole.value] ?? Icons.person;
   Color get roleColor => currentUser.value?.avatarColor != null ? Color(currentUser.value!.avatarColor!) : (roleColors[currentRole.value] ?? Colors.blue);
 }

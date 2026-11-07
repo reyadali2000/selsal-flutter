@@ -4,6 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'dynamic_report_pdf_generator.dart';
 import '../constants/approval_status.dart';
 import '../models/raw_material_models.dart';
+import '../services/pdf/arabic_pdf_service.dart';
 import '../services/user_signature_service.dart';
 
 class RawMaterialReportPdfGenerator {
@@ -21,6 +22,7 @@ class RawMaterialReportPdfGenerator {
     Uint8List? gmSignatureBytes,
     Uint8List? rejectedSignatureBytes,
   }) async {
+    await ArabicPdfService.initialize();
     // Auto-load signatures if not supplied
     inspectorSignatureBytes ??= await UserSignatureService.instance.getSignatureBytesForUser(
       userName: report.inspectorName,
@@ -651,39 +653,60 @@ class RawMaterialReportPdfGenerator {
             ? DynamicReportPdfGenerator.formatArabicDate(report.gmApprovedAt!) 
             : (isGmDone || isGmRejected ? DynamicReportPdfGenerator.formatArabicDate(DateTime.now()) : ''));
 
-    pw.Widget sigCol(String title, String name, String date, {Uint8List? signatureBytes, bool isRejected = false, bool isApproved = false, bool isVoided = false}) {
-      final pdfRed = PdfColor.fromHex('#C62828');
-      final pdfGreen = PdfColor.fromHex('#2E7D32');
-      final pdfAmber = PdfColor.fromHex('#E65100');
-      final borderColor = isRejected ? pdfRed : (isVoided ? pdfAmber : (isApproved ? pdfGreen : _tableBorder));
-      final bgColor = isRejected ? PdfColor.fromHex('#FFEBEE') : (isVoided ? PdfColor.fromHex('#FFF8E1') : (isApproved ? PdfColor.fromHex('#F1F8E9') : PdfColors.white));
-      final textColor = isRejected ? pdfRed : (isVoided ? pdfAmber : (isApproved ? pdfGreen : PdfColors.black));
+    pw.Widget sigCol(
+      String title,
+      String name,
+      String date, {
+      Uint8List? signatureBytes,
+      bool isRejected = false,
+      bool isApproved = false,
+      bool isVoided = false,
+      String? statusText,
+    }) {
+      final parsed = ArabicPdfService.splitNameAndRole(name);
+      final effectiveStatus = statusText ??
+          (isRejected
+              ? 'مرفوض'
+              : (isVoided
+                  ? 'معتمد سابقاً (أُلغي برفض الإدارة)'
+                  : (isApproved ? 'معتمد' : 'بانتظار الاعتماد')));
 
       return pw.Expanded(
         child: pw.Container(
-          padding: const pw.EdgeInsets.all(4),
+          padding: const pw.EdgeInsets.all(3),
           decoration: pw.BoxDecoration(
-            border: pw.Border.all(color: borderColor, width: 0.5),
-            color: bgColor,
+            border: pw.Border.all(color: _tableBorder, width: 0.5),
+            color: PdfColors.white,
           ),
           child: pw.Stack(
+            alignment: pw.Alignment.center,
             children: [
               pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                mainAxisSize: pw.MainAxisSize.min,
                 children: [
                   pw.Container(
                     width: double.infinity,
                     padding: const pw.EdgeInsets.symmetric(vertical: 2),
-                    color: isRejected ? pdfRed : (isApproved ? pdfGreen : _headerLightBlue),
+                    color: _headerLightBlue,
                     alignment: pw.Alignment.center,
-                    child: pw.Text(title, style: pw.TextStyle(font: ttfBold, fontSize: 8, color: isRejected || isApproved ? PdfColors.white : PdfColors.black)),
+                    child: pw.Text(title, style: pw.TextStyle(font: ttfBold, fontSize: 7.5, color: PdfColors.black)),
                   ),
-                  pw.SizedBox(height: 4),
-                  pw.Text('الاسم: $name', style: pw.TextStyle(font: ttf, fontSize: 7.5, color: textColor)),
+                  pw.SizedBox(height: 2.5),
+                  pw.Text('الاسم: ${parsed.name}', textAlign: pw.TextAlign.center, style: pw.TextStyle(font: ttfBold, fontSize: 7.5)),
+                  if (parsed.role != null) ...[
+                    pw.SizedBox(height: 1),
+                    pw.Text(parsed.role!, textAlign: pw.TextAlign.center, style: pw.TextStyle(font: ttf, fontSize: 6.5, color: PdfColors.grey700)),
+                  ],
                   pw.SizedBox(height: 2),
-                  pw.Text('التوقيع: ${name.isNotEmpty ? (isRejected ? "مرفوض" : "معتمد إلكترونياً") : "................"}', style: pw.TextStyle(font: ttf, fontSize: 7.5, color: textColor)),
+                  ArabicPdfService.statusBadge(
+                    text: effectiveStatus,
+                    isApproved: isApproved && !isRejected && !isVoided,
+                    isRejected: isRejected,
+                    fontSize: 7,
+                  ),
                   pw.SizedBox(height: 2),
-                  pw.Text('التاريخ: ${date.isNotEmpty ? date : "2026/  /  م"}', style: pw.TextStyle(font: ttf, fontSize: 7.5, color: textColor)),
+                  pw.Text('التاريخ: ${date.isNotEmpty ? date : "2026/  /  م"}', textAlign: pw.TextAlign.center, style: pw.TextStyle(font: ttf, fontSize: 6.5, color: isRejected ? const PdfColor.fromInt(0xFFB71C1C) : PdfColors.grey700)),
                 ],
               ),
               if (name.isNotEmpty && signatureBytes != null && (isApproved || isRejected || isVoided))
@@ -704,15 +727,63 @@ class RawMaterialReportPdfGenerator {
       );
     }
 
+    final gmStatusText = isClosed
+        ? 'معتمد (إجراء تصحيحي)'
+        : (isGmRejected ? 'مرفوض' : (isGmDone ? 'معتمد' : 'بانتظار الاعتماد'));
+
+    final qmStatusText = isClosed
+        ? 'معتمد سابقاً'
+        : (isQmCorrective
+            ? 'مرفوض بإجراء تصحيحي'
+            : ((isQmRejected || wasQmRejected || (!isRejectorGm && report.rejectedBy != null))
+                ? 'مرفوض'
+                : (wasQmApproved || isGmRejected
+                    ? 'معتمد سابقاً (أُلغي برفض الإدارة)'
+                    : (isQmDone ? 'معتمد' : 'بانتظار الاعتماد'))));
+
+    final qsStatusText = isQsRejected ? 'مرفوض' : (isQsDone ? 'معتمد' : 'بانتظار الاعتماد');
+
     return pw.Row(
       children: [
-        sigCol(gmTitle, gm, gmDate, signatureBytes: isGmRejected && !isClosed ? rejectedSignatureBytes : (isGmDone || isClosed ? gmSignatureBytes : null), isRejected: isGmRejected && !isClosed, isApproved: isGmDone || isClosed),
+        sigCol(
+          gmTitle,
+          gm,
+          gmDate,
+          signatureBytes: isGmRejected && !isClosed ? rejectedSignatureBytes : (isGmDone || isClosed ? gmSignatureBytes : null),
+          isRejected: isGmRejected && !isClosed,
+          isApproved: isGmDone || isClosed,
+          statusText: gmStatusText,
+        ),
         pw.SizedBox(width: 4),
-        sigCol(qmTitle, qm, qmDate, signatureBytes: isClosed ? qmSignatureBytes : (isQmCorrective ? (rejectedSignatureBytes ?? qmSignatureBytes) : ((isQmRejected || wasQmRejected || (!isRejectorGm && report.rejectedBy != null)) ? (rejectedSignatureBytes ?? qmSignatureBytes) : ((isQmDone || wasQmApproved) ? qmSignatureBytes : null))), isRejected: (isQmRejected || wasQmRejected || isQmCorrective || (!isRejectorGm && report.rejectedBy != null)) && !isClosed, isApproved: isQmDone && !isQmCorrective && !isClosed, isVoided: isClosed || wasQmApproved),
+        sigCol(
+          qmTitle,
+          qm,
+          qmDate,
+          signatureBytes: isClosed ? qmSignatureBytes : (isQmCorrective ? (rejectedSignatureBytes ?? qmSignatureBytes) : ((isQmRejected || wasQmRejected || (!isRejectorGm && report.rejectedBy != null)) ? (rejectedSignatureBytes ?? qmSignatureBytes) : ((isQmDone || wasQmApproved) ? qmSignatureBytes : null))),
+          isRejected: (isQmRejected || wasQmRejected || isQmCorrective || (!isRejectorGm && report.rejectedBy != null)) && !isClosed,
+          isApproved: isQmDone && !isQmCorrective && !isClosed && !wasQmApproved && !isGmRejected,
+          isVoided: isClosed || wasQmApproved || isGmRejected,
+          statusText: qmStatusText,
+        ),
         pw.SizedBox(width: 4),
-        sigCol('اعتماد مشرف الجودة', qsName, qsDate, signatureBytes: isQsRejected ? rejectedSignatureBytes : (isQsDone ? qsSignatureBytes : null), isRejected: isQsRejected, isApproved: isQsDone && !isQsRejected),
+        sigCol(
+          'اعتماد مشرف الجودة',
+          qsName,
+          qsDate,
+          signatureBytes: isQsRejected ? rejectedSignatureBytes : (isQsDone ? qsSignatureBytes : null),
+          isRejected: isQsRejected,
+          isApproved: isQsDone && !isQsRejected,
+          statusText: qsStatusText,
+        ),
         pw.SizedBox(width: 4),
-        sigCol('مفتش الجودة', inspector, report.dateStr, signatureBytes: inspectorSignatureBytes, isApproved: true),
+        sigCol(
+          'مفتش الجودة',
+          inspector,
+          report.dateStr,
+          signatureBytes: inspectorSignatureBytes,
+          isApproved: true,
+          statusText: 'مكتمل ومُرسل',
+        ),
       ],
     );
   }

@@ -90,20 +90,10 @@ class ArabicPdfService {
   // ============================================================
 
   static pw.ThemeData get theme {
-    _ensureInitialized();
     return pw.ThemeData.withFont(
-      base: _regular!,
-      bold: _bold!,
+      base: _regular ?? pw.Font.helvetica(),
+      bold: _bold ?? pw.Font.helveticaBold(),
     );
-  }
-
-  static void _ensureInitialized() {
-    if (!_initialized || _regular == null || _bold == null) {
-      throw StateError(
-        'ArabicPdfService is not initialized. '
-        'Call await ArabicPdfService.initialize() before creating the PDF.',
-      );
-    }
   }
 
   // ============================================================
@@ -114,9 +104,8 @@ class ArabicPdfService {
     double fontSize = 9,
     PdfColor color = PdfColors.black,
   }) {
-    _ensureInitialized();
     return pw.TextStyle(
-      font: _regular,
+      font: _regular ?? pw.Font.helvetica(),
       fontSize: fontSize,
       color: color,
     );
@@ -126,9 +115,8 @@ class ArabicPdfService {
     double fontSize = 10,
     PdfColor color = PdfColors.black,
   }) {
-    _ensureInitialized();
     return pw.TextStyle(
-      font: _bold,
+      font: _bold ?? pw.Font.helveticaBold(),
       fontSize: fontSize,
       color: color,
     );
@@ -183,6 +171,7 @@ class ArabicPdfService {
     bool isApproved = false,
     bool isRejected = false,
     double fontSize = 8,
+    pw.Font? font,
   }) {
     PdfColor bgColor;
     PdfColor borderColor;
@@ -202,6 +191,12 @@ class ArabicPdfService {
       textColor = const PdfColor.fromInt(0xFFE65100);
     }
 
+    final textStyle = font != null
+        ? pw.TextStyle(font: font, fontSize: fontSize, color: textColor)
+        : (_initialized && _bold != null
+            ? bold(fontSize: fontSize, color: textColor)
+            : pw.TextStyle(fontSize: fontSize, color: textColor));
+
     return pw.Container(
       padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: pw.BoxDecoration(
@@ -211,7 +206,7 @@ class ArabicPdfService {
       ),
       child: pw.Text(
         text,
-        style: bold(fontSize: fontSize, color: textColor),
+        style: textStyle,
       ),
     );
   }
@@ -720,17 +715,66 @@ class ArabicPdfService {
   }
 
   /// تقسيم الاسم والمسمى الوظيفي إذا كان مدمجاً في نفس النص (مثل: خالد العمري (مدير المصنع))
-  /// لتجنب تداخل الأقواس وعكس الكلمات في سطر واحد
+  /// مع تجريد أي تكرار ناتج عن دمج الألقاب أو إعادة الاعتماد
   static ({String name, String? role}) splitNameAndRole(String raw) {
-    final cleaned = cleanArabicText(raw);
-    final match = RegExp(r'^(.*?)\s*(\(.*\))\s*$').firstMatch(cleaned);
-    if (match != null && match.group(1)!.trim().isNotEmpty) {
-      return (
-        name: match.group(1)!.trim(),
-        role: match.group(2)!.trim(),
-      );
+    var cleaned = cleanArabicText(raw);
+    cleaned = cleaned.replaceFirst(RegExp(r'^الاسم\s*:\s*'), '').trim();
+    if (cleaned.isEmpty) return (name: '', role: null);
+
+    // 1. فحص وحل التكرار التام (مثل: "مسؤول النظام (المدير التقني) (مسؤول النظام (المدير التقني))")
+    final doubleRepeatMatch = RegExp(r'^(.+?)\s+\1$').firstMatch(cleaned);
+    if (doubleRepeatMatch != null) {
+      cleaned = doubleRepeatMatch.group(1)!.trim();
     }
-    return (name: cleaned, role: null);
+
+    // 2. استخراج كافة الأقواس الموجودة في النص بالترتيب
+    final parenthesizedMatches = RegExp(r'\(([^)]+)\)').allMatches(cleaned).toList();
+
+    if (parenthesizedMatches.isEmpty) {
+      return (name: cleaned.trim(), role: null);
+    }
+
+    // 3. إزالة الأقواس المتداخلة أو المتكررة للحصول على الاسم الصافي
+    var pureName = cleaned;
+    while (pureName.contains('(')) {
+      final prev = pureName;
+      pureName = pureName.replaceAll(RegExp(r'\([^()]*\)'), '').trim();
+      if (prev == pureName) break;
+    }
+
+    // إزالة تكرار الكلمات المتجاورة في الاسم الصافي (مثل: "مسؤول النظام مسؤول النظام")
+    final nameWords = pureName.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (nameWords.length >= 2 && nameWords.length % 2 == 0) {
+      final half = nameWords.length ~/ 2;
+      final firstHalf = nameWords.sublist(0, half).join(' ');
+      final secondHalf = nameWords.sublist(half).join(' ');
+      if (firstHalf == secondHalf) {
+        pureName = firstHalf;
+      }
+    }
+
+    if (pureName.isEmpty) {
+      pureName = parenthesizedMatches.first.group(1)?.trim() ?? cleaned;
+    }
+
+    // 4. استخراج الصفة/الدور الأكثر ملاءمة للاعتماد
+    final roles = parenthesizedMatches
+        .map((m) => m.group(1)!.trim())
+        .where((r) => r.isNotEmpty && r != pureName)
+        .toSet()
+        .toList();
+
+    String? finalRole;
+    if (roles.isNotEmpty) {
+      // نختار الدور الأكثر صلة بالاعتماد الإداري أو الفحص
+      final explicitApprovalRole = roles.lastWhere(
+        (r) => r.contains('مدير') || r.contains('مشرف') || r.contains('مفتش') || r.contains('أخصائي'),
+        orElse: () => roles.last,
+      );
+      finalRole = '($explicitApprovalRole)';
+    }
+
+    return (name: pureName, role: finalRole);
   }
 }
 
