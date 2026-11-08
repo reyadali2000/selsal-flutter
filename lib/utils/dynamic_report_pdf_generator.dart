@@ -49,6 +49,222 @@ class DynamicReportPdfGenerator {
     final ByteData fontBoldData = await rootBundle.load('assets/fonts/Tajawal-Bold.ttf');
     final ttfBold = pw.Font.ttf(fontBoldData);
 
+    await _appendRecordToDocument(
+      pdf: pdf,
+      report: report,
+      record: record,
+      values: values,
+      ttf: ttf,
+      ttfBold: ttfBold,
+      logoImage: logoImage,
+      approvals: approvals,
+      qsSignatureBytes: qsSignatureBytes,
+      qmSignatureBytes: qmSignatureBytes,
+      gmSignatureBytes: gmSignatureBytes,
+      creatorSignatureBytes: creatorSignatureBytes,
+      rejectedSignatureBytes: rejectedSignatureBytes,
+    );
+
+    return pdf.save();
+  }
+
+  /// توليد حزمة تدقيق مجمّعة (Batch Audit Pack PDF) تضم صفحة غلاف وفهرس رسمي + كافة السجلات المحددة
+  static Future<Uint8List> generateBatchAuditPack({
+    required DynamicReport report,
+    required List<({DynamicReportRecord record, List<DynamicReportValue> values, List<ReportApproval>? approvals})> entries,
+    String? filterLabel,
+  }) async {
+    await ArabicPdfService.initialize();
+    final pdf = pw.Document();
+
+    pw.MemoryImage? logoImage;
+    try {
+      final ByteData data = await rootBundle.load('assets/images/selsal_pdf_header.png');
+      logoImage = pw.MemoryImage(data.buffer.asUint8List());
+    } catch (_) {}
+
+    final ByteData fontData = await rootBundle.load('assets/fonts/Tajawal-Regular.ttf');
+    final ttf = pw.Font.ttf(fontData);
+    final ByteData fontBoldData = await rootBundle.load('assets/fonts/Tajawal-Bold.ttf');
+    final ttfBold = pw.Font.ttf(fontBoldData);
+
+    // 1. بناء صفحة غلاف وفهرس حزمة التدقيق الرسمية
+    _addAuditPackCoverPage(
+      pdf: pdf,
+      report: report,
+      entries: entries,
+      ttf: ttf,
+      ttfBold: ttfBold,
+      logoImage: logoImage,
+      filterLabel: filterLabel,
+    );
+
+    // 2. إلحاق صفحات كل سجل بالترتيب
+    for (final item in entries) {
+      await _appendRecordToDocument(
+        pdf: pdf,
+        report: report,
+        record: item.record,
+        values: item.values,
+        ttf: ttf,
+        ttfBold: ttfBold,
+        logoImage: logoImage,
+        approvals: item.approvals,
+      );
+    }
+
+    return pdf.save();
+  }
+
+  static void _addAuditPackCoverPage({
+    required pw.Document pdf,
+    required DynamicReport report,
+    required List<({DynamicReportRecord record, List<DynamicReportValue> values, List<ReportApproval>? approvals})> entries,
+    required pw.Font ttf,
+    required pw.Font ttfBold,
+    pw.MemoryImage? logoImage,
+    String? filterLabel,
+  }) {
+    final bool isLandscape = report.orientation == 'landscape';
+    final pageFormat = isLandscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4;
+    final double horizontalMargin = isLandscape ? 16 : 24;
+    final double verticalMargin = isLandscape ? 14 : 20;
+    final double contentWidth = pageFormat.width - (horizontalMargin * 2);
+
+    final int totalCount = entries.length;
+    final int approvedCount = entries.where((e) => e.record.approvalStatus == 'Approved' || e.record.approvalStatus == 'Closed').length;
+    final int rejectedCount = entries.where((e) => ApprovalStatus.isRejectedStatus(e.record.approvalStatus)).length;
+    final int pendingCount = totalCount - approvedCount - rejectedCount;
+
+    final String exportDateStr = formatArabicDate(DateTime.now());
+    final int maxIndexRows = isLandscape ? 14 : 22;
+    final displayEntries = entries.take(maxIndexRows).toList();
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: pageFormat,
+        textDirection: pw.TextDirection.rtl,
+        margin: pw.EdgeInsets.symmetric(horizontal: horizontalMargin, vertical: verticalMargin),
+        theme: pw.ThemeData.withFont(base: ttf, bold: ttfBold),
+        build: (context) {
+          return pw.Directionality(
+            textDirection: pw.TextDirection.rtl,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+              children: [
+                _buildHeader(logoImage, ttf, ttfBold, 'ملف تدقيق رسمي (Audit Pack)', contentWidth),
+                pw.SizedBox(height: 6),
+                _buildTitleBox('حزمة التدقيق المجمّعة — ${report.name}', ttfBold, isLandscape),
+                pw.SizedBox(height: 8),
+                // بطاقة ملخص الحزمة الإحصائي
+                pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: pw.BoxDecoration(
+                    color: const PdfColor.fromInt(0xFFF0F5FA),
+                    border: pw.Border.all(color: _tableBorder, width: 0.9),
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                  ),
+                  child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text('إجمالي السجلات المرفقة: $totalCount', style: pw.TextStyle(font: ttfBold, fontSize: 9.5)),
+                      pw.Text('معتمد نهائياً: $approvedCount', style: pw.TextStyle(font: ttfBold, fontSize: 9.5, color: const PdfColor.fromInt(0xFF1B5E20))),
+                      pw.Text('قيد الاعتماد: $pendingCount', style: pw.TextStyle(font: ttfBold, fontSize: 9.5, color: const PdfColor.fromInt(0xFFE65100))),
+                      pw.Text('مرفوض / تصحيحي: $rejectedCount', style: pw.TextStyle(font: ttfBold, fontSize: 9.5, color: const PdfColor.fromInt(0xFFB71C1C))),
+                      pw.Text('تاريخ الاستخراج: $exportDateStr', style: pw.TextStyle(font: ttf, fontSize: 8.5)),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 8),
+                pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  color: _headerLightBlue,
+                  alignment: pw.Alignment.centerRight,
+                  child: pw.Text(
+                    'فهرس السجلات المضمّنة في الحزمة${filterLabel != null && filterLabel.isNotEmpty ? " ($filterLabel)" : ""}:',
+                    style: pw.TextStyle(font: ttfBold, fontSize: 9.5),
+                  ),
+                ),
+                pw.Table(
+                  border: pw.TableBorder.all(color: _tableBorder, width: 0.5),
+                  columnWidths: const {
+                    0: pw.FlexColumnWidth(2.2), // الحالة
+                    1: pw.FlexColumnWidth(1.8), // الفرع
+                    2: pw.FlexColumnWidth(2.5), // مُعد التقرير
+                    3: pw.FlexColumnWidth(2.2), // تاريخ التعبئة
+                    4: pw.FlexColumnWidth(1.2), // رقم السجل
+                    5: pw.FlexColumnWidth(0.7), // م
+                  },
+                  children: [
+                    pw.TableRow(
+                      decoration: const pw.BoxDecoration(color: _headerLightBlue),
+                      children: [
+                        _indexCell('حالة الاعتماد', ttfBold, isHeader: true),
+                        _indexCell('المصنع / الفرع', ttfBold, isHeader: true),
+                        _indexCell('منفذ الفحص', ttfBold, isHeader: true),
+                        _indexCell('تاريخ التعبئة', ttfBold, isHeader: true),
+                        _indexCell('رقم السجل', ttfBold, isHeader: true),
+                        _indexCell('م', ttfBold, isHeader: true),
+                      ],
+                    ),
+                    for (int i = 0; i < displayEntries.length; i++)
+                      pw.TableRow(
+                        decoration: i.isEven ? const pw.BoxDecoration(color: _zebraRowColor) : null,
+                        children: [
+                          _indexCell(formatArabicStatus(displayEntries[i].record.approvalStatus), ttfBold),
+                          _indexCell(displayEntries[i].record.effectiveBranchName, ttf),
+                          _indexCell(formatCreatorName(displayEntries[i].record.createdBy), ttf),
+                          _indexCell(formatArabicDate(displayEntries[i].record.createdAt), ttf),
+                          _indexCell('#${displayEntries[i].record.id ?? "--"}', ttfBold),
+                          _indexCell('${i + 1}', ttfBold),
+                        ],
+                      ),
+                  ],
+                ),
+                if (entries.length > maxIndexRows) ...[
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    '* ملاحظة: يعرض الفهرس أعلاه أول $maxIndexRows سجلاً، بينما تتضمن الصفحات التالية كافة السجلات المحددة بالكامل ($totalCount سجلاً).',
+                    style: pw.TextStyle(font: ttf, fontSize: 8, color: PdfColors.grey700),
+                  ),
+                ],
+                pw.Spacer(),
+                _buildFooter(report, ttf),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  static pw.Widget _indexCell(String text, pw.Font font, {bool isHeader = false}) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 3.5, horizontal: 4),
+      child: pw.Text(
+        text,
+        textAlign: pw.TextAlign.center,
+        style: pw.TextStyle(font: font, fontSize: isHeader ? 8.5 : 8.0),
+      ),
+    );
+  }
+
+  static Future<void> _appendRecordToDocument({
+    required pw.Document pdf,
+    required DynamicReport report,
+    required DynamicReportRecord record,
+    required List<DynamicReportValue> values,
+    required pw.Font ttf,
+    required pw.Font ttfBold,
+    pw.MemoryImage? logoImage,
+    List<ReportApproval>? approvals,
+    Uint8List? qsSignatureBytes,
+    Uint8List? qmSignatureBytes,
+    Uint8List? gmSignatureBytes,
+    Uint8List? creatorSignatureBytes,
+    Uint8List? rejectedSignatureBytes,
+  }) async {
+
     // استخراج وتجهيز لقطات التوقيعات الرقمية المعتمدة
     Uint8List? effectiveQsSignature = qsSignatureBytes;
     Uint8List? effectiveQmSignature = qmSignatureBytes;
@@ -171,10 +387,26 @@ class DynamicReportPdfGenerator {
       } catch (_) {}
     }
 
-    // Map values by fieldId for quick access
+    // Map values by fieldId for quick access (with fieldKey fallback for historical schema safety)
     final Map<int, String> valueMap = {};
+    final Map<String, String> keyValueMap = {};
     for (var v in values) {
       valueMap[v.fieldId] = v.value ?? '';
+      if (v.fieldKey != null && v.fieldKey!.isNotEmpty && (v.value ?? '').isNotEmpty) {
+        keyValueMap[v.fieldKey!] = v.value!;
+      }
+    }
+
+    if (keyValueMap.isNotEmpty && report.sections != null) {
+      for (var sec in report.sections!) {
+        for (var fld in sec.fields ?? <DynamicReportField>[]) {
+          if (fld.id != null && (!valueMap.containsKey(fld.id) || valueMap[fld.id]!.isEmpty)) {
+            if (keyValueMap.containsKey(fld.fieldKey)) {
+              valueMap[fld.id!] = keyValueMap[fld.fieldKey]!;
+            }
+          }
+        }
+      }
     }
 
     // Fallback to data_json (المحرك الهجين) if values are empty or incomplete
@@ -211,7 +443,8 @@ class DynamicReportPdfGenerator {
     final double verticalMargin = isLandscape ? 14 : 20;
     final double contentWidth = pageFormat.width - (horizontalMargin * 2);
 
-    final tableSections = (report.sections ?? []).where((sec) =>
+    final expandedSections = _expandLongTableSections(report.sections ?? [], valueMap, isLandscape);
+    final tableSections = expandedSections.where((sec) =>
         sec.fields?.any((f) => f.fieldType == 'table') ?? false).toList();
     final bool useDedicatedTablePages = isLandscape && tableSections.isNotEmpty;
 
@@ -338,7 +571,7 @@ class DynamicReportPdfGenerator {
                       ),
                       pw.SizedBox(height: 3),
                     ],
-                    _buildFooter(report, ttf),
+                    _buildFooter(report, ttf, record),
                   ],
                 ),
               );
@@ -347,7 +580,7 @@ class DynamicReportPdfGenerator {
         );
       }
     } else {
-      final allSections = report.sections ?? [];
+      final allSections = expandedSections;
       final List<double> sectionHeights = [];
       double totalSectionsHeight = 0;
       for (var sec in allSections) {
@@ -441,7 +674,7 @@ class DynamicReportPdfGenerator {
                       ),
                       pw.SizedBox(height: isLandscape ? 3 : 6),
                     ],
-                    _buildFooter(report, ttf),
+                    _buildFooter(report, ttf, record),
                   ],
                 ),
               );
@@ -450,8 +683,6 @@ class DynamicReportPdfGenerator {
         );
       }
     }
-
-    return pdf.save();
   }
 
     static String _getArabicDayName(DateTime date) {
@@ -688,6 +919,89 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
         children: items,
       ),
     );
+  }
+
+  /// تقسيم الجداول الطويلة تلقائياً عبر الصفحات (Auto Row-Chunking) لمنع فيضان الصفحة (Overflow)
+  /// مع الحفاظ على تكرار رأس الجدول في كل صفحة واستمرار الترقيم التسلسلي للصفوف (م).
+  static List<DynamicReportSection> _expandLongTableSections(
+    List<DynamicReportSection> sections,
+    Map<int, String> valueMap,
+    bool isLandscape,
+  ) {
+    final int maxRowsPerPage = isLandscape ? 16 : 22;
+    final List<DynamicReportSection> result = [];
+    int syntheticIdCounter = -900000;
+
+    for (final sec in sections) {
+      final secFields = sec.fields ?? [];
+      final tableFields = secFields.where((f) => f.fieldType == 'table').toList();
+
+      if (tableFields.length != 1) {
+        result.add(sec);
+        continue;
+      }
+
+      final tf = tableFields.first;
+      final rawJson = (tf.id != null ? valueMap[tf.id!] : null) ?? '';
+      List<Map<String, dynamic>> rows = [];
+      if (rawJson.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(rawJson);
+          if (decoded is List) {
+            rows = decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          }
+        } catch (_) {}
+      }
+      final config = tf.tableConfig ?? DynamicTableConfig.inspectionChecklistTemplate();
+      if (rows.isEmpty && config.defaultRows.isNotEmpty) {
+        rows = config.defaultRows.map((e) => Map<String, dynamic>.from(e)).toList();
+      } else if (rows.isEmpty && config.rowCount > 0) {
+        rows = List.generate(config.rowCount, (_) => <String, dynamic>{});
+      }
+
+      if (rows.length <= maxRowsPerPage) {
+        result.add(sec);
+        continue;
+      }
+
+      final boxFieldTypes = ['note', 'instructions'];
+      final standardFields = secFields
+          .where((f) => f.fieldType != 'table' && !boxFieldTypes.contains(f.fieldType))
+          .toList();
+      final boxFields = secFields.where((f) => boxFieldTypes.contains(f.fieldType)).toList();
+
+      final int totalChunks = (rows.length / maxRowsPerPage).ceil();
+      for (int chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+        final int start = chunkIdx * maxRowsPerPage;
+        final int end = (start + maxRowsPerPage < rows.length) ? start + maxRowsPerPage : rows.length;
+        final List<Map<String, dynamic>> chunkRows = [];
+        for (int rIdx = start; rIdx < end; rIdx++) {
+          final rowCopy = Map<String, dynamic>.from(rows[rIdx]);
+          rowCopy['_row_num'] = rIdx + 1;
+          chunkRows.add(rowCopy);
+        }
+
+        final int chunkFieldId = syntheticIdCounter--;
+        valueMap[chunkFieldId] = jsonEncode(chunkRows);
+        final chunkTableField = tf.copyWith(id: chunkFieldId);
+
+        final List<DynamicReportField> chunkFields = [
+          if (chunkIdx == 0) ...standardFields,
+          chunkTableField,
+          if (chunkIdx == totalChunks - 1) ...boxFields,
+        ];
+
+        result.add(
+          sec.copyWith(
+            title: chunkIdx == 0 ? sec.title : '${sec.title} (تابع ${chunkIdx + 1}/$totalChunks)',
+            description: chunkIdx == 0 ? sec.description : null,
+            fields: chunkFields,
+          ),
+        );
+      }
+    }
+
+    return result;
   }
 
   static double _estimateSectionHeight(
@@ -1041,11 +1355,12 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
       List<pw.Widget> cellWidgets = [];
 
       if (!hasExplicitNumCol) {
+        final displayRowNum = r['_row_num']?.toString() ?? '${rowIndex + 1}';
         cellWidgets.add(
           pw.Container(
             padding: pw.EdgeInsets.symmetric(vertical: rowPadY),
             alignment: pw.Alignment.center,
-            child: pw.Text('${rowIndex + 1}', style: pw.TextStyle(font: ttfBold, fontSize: cellFontSize)),
+            child: pw.Text(displayRowNum, style: pw.TextStyle(font: ttfBold, fontSize: cellFontSize)),
           ),
         );
       }
@@ -1268,7 +1583,7 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
     return unit.map((p) => PdfPoint(p.x * size, p.y * size)).toList();
   }
 
-  static pw.Widget _buildFooter(DynamicReport report, pw.Font ttf) {
+  static pw.Widget _buildFooter(DynamicReport report, pw.Font ttf, [DynamicReportRecord? record]) {
     final docNum = (report.docNumber != null && report.docNumber!.trim().isNotEmpty)
         ? report.docNumber!.trim()
         : (report.name.isNotEmpty ? report.name : 'SELSAL-QA-DR');
@@ -1279,18 +1594,42 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
         ? report.issueDate!.trim()
         : '2026/07/15';
 
+    final recId = record?.id ?? 0;
+    final recStatus = record?.approvalStatus ?? 'Approved';
+    final recDate = DateFormat('yyyy-MM-dd').format(record?.createdAt ?? DateTime.now());
+    final qrPayload = 'SELSAL-QMS|DOC:$docNum|VER:$versionNum|REC:#$recId|ST:$recStatus|DT:$recDate';
+
     return pw.Container(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
       decoration: pw.BoxDecoration(
         border: pw.Border.all(color: PdfColors.black, width: 0.8),
         borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
       ),
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
           pw.Text('رقم الوثيقة: $docNum', style: pw.TextStyle(font: ttf, fontSize: 8)),
           pw.Text('تاريخ الاصدار: $issueDate', style: pw.TextStyle(font: ttf, fontSize: 8)),
           pw.Text('إصدار رقم: $versionNum', style: pw.TextStyle(font: ttf, fontSize: 8)),
+          pw.Row(
+            mainAxisSize: pw.MainAxisSize.min,
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.Text(
+                'ختم التحقق الرقمي:',
+                style: pw.TextStyle(font: ttf, fontSize: 6.8, color: PdfColors.grey800),
+              ),
+              pw.SizedBox(width: 4),
+              pw.BarcodeWidget(
+                barcode: pw.Barcode.qrCode(),
+                data: qrPayload,
+                width: 17,
+                height: 17,
+                drawText: false,
+              ),
+            ],
+          ),
         ],
       ),
     );

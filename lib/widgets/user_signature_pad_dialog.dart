@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -72,15 +73,46 @@ class _UserSignaturePadDialogState extends State<UserSignaturePadDialog> {
     });
   }
 
-  /// التقاط الرسم وتصديره كصورة PNG شفافة عالية الدقة
+  /// التقاط الرسم وتصديره كصورة PNG شفافة عالية الدقة مع تحجيم وتوسيط تلقائي (Auto-Crop & Center Scaling)
   Future<Uint8List?> _exportDrawingToPng() async {
     const double exportWidth = 400;
     const double exportHeight = 160;
+    const double safePadding = 14.0;
+
+    // 1. حساب المستطيل المحيط بجميع نقاط التوقيع المرسومة (Bounding Box)
+    double minX = double.infinity;
+    double minY = double.infinity;
+    double maxX = double.negativeInfinity;
+    double maxY = double.negativeInfinity;
+
+    for (final stroke in _strokes) {
+      for (final pt in stroke) {
+        if (pt.dx < minX) minX = pt.dx;
+        if (pt.dy < minY) minY = pt.dy;
+        if (pt.dx > maxX) maxX = pt.dx;
+        if (pt.dy > maxY) maxY = pt.dy;
+      }
+    }
+
+    if (!minX.isFinite || !minY.isFinite) return null;
+
+    final double drawnWidth = math.max(maxX - minX, 1.0);
+    final double drawnHeight = math.max(maxY - minY, 1.0);
+    final double availWidth = exportWidth - safePadding * 2;
+    final double availHeight = exportHeight - safePadding * 2;
+
+    // 2. حساب معامل التحجيم المتناسب وإزاحة التوسيط لمنع القصّ في الشاشات العريضة
+    final double rawScale = math.min(availWidth / drawnWidth, availHeight / drawnHeight);
+    final double scale = rawScale.clamp(0.25, 1.85);
+    final double offsetX = (exportWidth - drawnWidth * scale) / 2.0 - minX * scale;
+    final double offsetY = (exportHeight - drawnHeight * scale) / 2.0 - minY * scale;
+
+    Offset transformPoint(Offset p) => Offset(p.dx * scale + offsetX, p.dy * scale + offsetY);
 
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, exportWidth, exportHeight));
 
-    // رسم الخطوط على قماش شفاف
+    // رسم الخطوط المنعمة على قماش شفاف
     final paint = Paint()
       ..color = _selectedInkColor
       ..strokeWidth = 3.0
@@ -91,14 +123,21 @@ class _UserSignaturePadDialogState extends State<UserSignaturePadDialog> {
     for (final stroke in _strokes) {
       if (stroke.isEmpty) continue;
       if (stroke.length == 1) {
-        canvas.drawCircle(stroke.first, 1.5, paint..style = PaintingStyle.fill);
+        final pt = transformPoint(stroke.first);
+        canvas.drawCircle(pt, 1.8, paint..style = PaintingStyle.fill);
         paint.style = PaintingStyle.stroke;
       } else {
         final path = Path();
-        path.moveTo(stroke.first.dx, stroke.first.dy);
+        final firstPt = transformPoint(stroke.first);
+        path.moveTo(firstPt.dx, firstPt.dy);
         for (int i = 1; i < stroke.length; i++) {
-          path.lineTo(stroke.elementAt(i).dx, stroke.elementAt(i).dy);
+          final prevPt = transformPoint(stroke[i - 1]);
+          final currPt = transformPoint(stroke[i]);
+          final midPt = Offset((prevPt.dx + currPt.dx) / 2, (prevPt.dy + currPt.dy) / 2);
+          path.quadraticBezierTo(prevPt.dx, prevPt.dy, midPt.dx, midPt.dy);
         }
+        final lastPt = transformPoint(stroke.last);
+        path.lineTo(lastPt.dx, lastPt.dy);
         canvas.drawPath(path, paint);
       }
     }
@@ -344,30 +383,38 @@ class _UserSignaturePadDialogState extends State<UserSignaturePadDialog> {
                               ),
                             ),
                           )
-                        // أو لوحة الرسم اليدوي
+                        // أو لوحة الرسم اليدوي المقيدة بحدود الصندوق
                         else
-                          GestureDetector(
-                            onPanStart: (details) {
-                              setState(() {
-                                _currentStroke = [details.localPosition];
-                                _strokes.add(_currentStroke!);
-                              });
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              Offset clampPoint(Offset p) => Offset(
+                                    p.dx.clamp(4.0, math.max(4.0, constraints.maxWidth - 4.0)),
+                                    p.dy.clamp(4.0, math.max(4.0, constraints.maxHeight - 4.0)),
+                                  );
+                              return GestureDetector(
+                                onPanStart: (details) {
+                                  setState(() {
+                                    _currentStroke = [clampPoint(details.localPosition)];
+                                    _strokes.add(_currentStroke!);
+                                  });
+                                },
+                                onPanUpdate: (details) {
+                                  setState(() {
+                                    _currentStroke?.add(clampPoint(details.localPosition));
+                                  });
+                                },
+                                onPanEnd: (_) {
+                                  _currentStroke = null;
+                                },
+                                child: CustomPaint(
+                                  painter: _SignaturePainter(
+                                    strokes: _strokes,
+                                    color: _selectedInkColor,
+                                  ),
+                                  size: Size.infinite,
+                                ),
+                              );
                             },
-                            onPanUpdate: (details) {
-                              setState(() {
-                                _currentStroke?.add(details.localPosition);
-                              });
-                            },
-                            onPanEnd: (_) {
-                              _currentStroke = null;
-                            },
-                            child: CustomPaint(
-                              painter: _SignaturePainter(
-                                strokes: _strokes,
-                                color: _selectedInkColor,
-                              ),
-                              size: Size.infinite,
-                            ),
                           ),
 
                         // نص الإرشاد التوضيحي عندما تكون اللوحة فارغة
@@ -557,14 +604,18 @@ class _SignaturePainter extends CustomPainter {
     for (final stroke in strokes) {
       if (stroke.isEmpty) continue;
       if (stroke.length == 1) {
-        canvas.drawCircle(stroke.first, 1.4, paint..style = PaintingStyle.fill);
+        canvas.drawCircle(stroke.first, 1.6, paint..style = PaintingStyle.fill);
         paint.style = PaintingStyle.stroke;
       } else {
         final path = Path();
         path.moveTo(stroke.first.dx, stroke.first.dy);
         for (int i = 1; i < stroke.length; i++) {
-          path.lineTo(stroke.elementAt(i).dx, stroke.elementAt(i).dy);
+          final prev = stroke[i - 1];
+          final curr = stroke[i];
+          final mid = Offset((prev.dx + curr.dx) / 2, (prev.dy + curr.dy) / 2);
+          path.quadraticBezierTo(prev.dx, prev.dy, mid.dx, mid.dy);
         }
+        path.lineTo(stroke.last.dx, stroke.last.dy);
         canvas.drawPath(path, paint);
       }
     }

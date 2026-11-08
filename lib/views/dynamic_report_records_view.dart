@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:pdf/pdf.dart';
+import 'package:printing/printing.dart';
 import '../constants/approval_status.dart';
 import '../controllers/dynamic_report_records_controller.dart';
 import '../models/dynamic_report_models.dart';
@@ -39,6 +41,27 @@ class DynamicReportRecordsView extends StatelessWidget {
           centerTitle: true,
           elevation: 1,
           actions: [
+            Obx(() {
+              if (controller.records.isEmpty || !UserSessionService.to.canExportPdf) {
+                return const SizedBox.shrink();
+              }
+              return IconButton(
+                icon: controller.isExportingBatch.value
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.picture_as_pdf_rounded, color: Colors.white),
+                tooltip: 'تصدير حزمة تدقيق مجمّعة (Audit Pack PDF)',
+                onPressed: controller.isExportingBatch.value
+                    ? null
+                    : () => _showBatchExportDialog(context, controller),
+              );
+            }),
             const SyncStatusIndicator(),
             Obx(() {
               if (!UserSessionService.to.canFilterByBranch) return const SizedBox.shrink();
@@ -454,6 +477,130 @@ class DynamicReportRecordsView extends StatelessWidget {
       confirmLabel: 'حذف',
       confirmColor: Colors.redAccent,
       onConfirm: () => controller.deleteRecord(record.id!),
+    );
+  }
+
+  void _showBatchExportDialog(
+    BuildContext context,
+    DynamicReportRecordsController controller,
+  ) {
+    final totalFiltered = controller.filteredRecords.length;
+    final approvedCount = controller.filteredRecords
+        .where((r) => r.approvalStatus == 'Approved' || r.approvalStatus == 'Closed')
+        .length;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.picture_as_pdf_rounded, color: AppColors.primaryDark),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'تصدير حزمة تدقيق مجمّعة (Audit Pack)',
+                  style: TextStyle(
+                    fontFamily: 'Tajawal',
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'سيتم إنشاء ملف PDF رسمي موحّد يبدأ بصفحة غلاف وفهرس شامل للسجلات يتبعه كافة السجلات المحددة كاملةً مع التوقيعات الرقمية وختم QR للتحقق.\n\n'
+            '• إجمالي السجلات المعروضة حالياً: ($totalFiltered)\n'
+            '• السجلات المعتمدة نهائياً منها: ($approvedCount)',
+            style: const TextStyle(fontFamily: 'Tajawal', fontSize: 13.5, height: 1.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('إلغاء', style: TextStyle(fontFamily: 'Tajawal')),
+            ),
+            if (approvedCount > 0 && approvedCount < totalFiltered)
+              OutlinedButton.icon(
+                onPressed: () async {
+                  Navigator.of(ctx).pop();
+                  final bytes = await controller.generateBatchAuditPackBytes(approvedOnly: true);
+                  if (bytes != null && context.mounted) {
+                    _openBatchPreviewDialog(context, controller, bytes);
+                  }
+                },
+                icon: const Icon(Icons.verified_rounded, size: 18, color: Color(0xFF2E7D32)),
+                label: Text(
+                  'المعتمدة فقط ($approvedCount)',
+                  style: const TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold, color: Color(0xFF2E7D32)),
+                ),
+              ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryDark,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                final bytes = await controller.generateBatchAuditPackBytes(approvedOnly: false);
+                if (bytes != null && context.mounted) {
+                  _openBatchPreviewDialog(context, controller, bytes);
+                }
+              },
+              icon: const Icon(Icons.print_rounded, size: 18, color: Colors.white),
+              label: Text(
+                'تصدير الكل ($totalFiltered)',
+                style: const TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openBatchPreviewDialog(
+    BuildContext context,
+    DynamicReportRecordsController controller,
+    dynamic pdfBytes,
+  ) {
+    final isLandscape = controller.report?.orientation == 'landscape';
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog.fullscreen(
+        child: Scaffold(
+          backgroundColor: AppColors.canvas,
+          appBar: AppBar(
+            backgroundColor: AppColors.primaryDark,
+            foregroundColor: Colors.white,
+            title: Text(
+              'حزمة التدقيق المجمّعة — ${controller.reportName.value}',
+              style: const TextStyle(
+                fontFamily: 'Tajawal',
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Colors.white,
+              ),
+            ),
+            leading: IconButton(
+              icon: const Icon(Icons.close_rounded, color: Colors.white),
+              onPressed: () => Navigator.of(ctx).pop(),
+            ),
+          ),
+          body: PdfPreview(
+            build: (_) async => pdfBytes,
+            pdfFileName: 'Audit_Pack_${controller.report?.docNumber ?? controller.reportId}.pdf',
+            allowPrinting: true,
+            allowSharing: true,
+            canChangeOrientation: false,
+            canChangePageFormat: false,
+            initialPageFormat: isLandscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4,
+            maxPageWidth: isLandscape ? 1050 : 800,
+          ),
+        ),
+      ),
     );
   }
 }

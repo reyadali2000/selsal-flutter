@@ -1057,6 +1057,7 @@ class SettingsView extends StatelessWidget {
     }
 
     Uint8List? currentSignature = await UserSignatureService.instance.getCustomUserSignatureBytes(user.id!);
+    String selectedSignatureType = 'uploaded_png';
     if (!context.mounted) return;
 
     showDialog(
@@ -1150,6 +1151,7 @@ class SettingsView extends StatelessWidget {
                             if (bytes != null) {
                               setDialogState(() {
                                 currentSignature = bytes;
+                                selectedSignatureType = 'uploaded_png';
                               });
                             }
                           },
@@ -1171,6 +1173,7 @@ class SettingsView extends StatelessWidget {
                             if (bytes != null) {
                               setDialogState(() {
                                 currentSignature = bytes;
+                                selectedSignatureType = 'uploaded_png';
                               });
                             }
                           },
@@ -1196,6 +1199,7 @@ class SettingsView extends StatelessWidget {
                             if (bytes != null) {
                               setDialogState(() {
                                 currentSignature = bytes;
+                                selectedSignatureType = 'drawn_png';
                               });
                             }
                           },
@@ -1244,7 +1248,7 @@ class SettingsView extends StatelessWidget {
                       final synced = await UserSignatureService.instance.saveUserSignature(
                         userId: user.id!,
                         pngBytes: currentSignature!,
-                        signatureType: 'uploaded_png',
+                        signatureType: selectedSignatureType,
                       );
                       Get.snackbar(
                         'تم الحفظ',

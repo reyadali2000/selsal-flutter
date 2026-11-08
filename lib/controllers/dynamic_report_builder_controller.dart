@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/dynamic_report_models.dart';
 import '../services/api/dynamic_reports_api_service.dart';
+import '../services/user_session_service.dart';
 import '../utils/dynamic_report_color_helper.dart';
 
 
@@ -417,6 +418,10 @@ class DynamicReportBuilderController extends GetxController {
         fields.toList(),
       );
 
+      if (Get.isRegistered<UserSessionService>()) {
+        await UserSessionService.to.refreshPermissions();
+      }
+
       Get.back(result: true);
       Get.snackbar('نجاح', 'تم حفظ التقرير بنجاح');
     } catch (e) {
@@ -424,6 +429,79 @@ class DynamicReportBuilderController extends GetxController {
     } finally {
       isLoading.value = false;
     }
+  }
+
+  /// بناء نسخة حية من التقرير الحالي (مع الأقسام والحقول المضافة حالياً) لمعاينته كملف PDF فوري قبل الحفظ
+  ({DynamicReport report, DynamicReportRecord sampleRecord, List<DynamicReportValue> sampleValues}) buildLivePreviewModel() {
+    final effectiveOrientation = (orientation.value == 'portrait' &&
+            fields.any((f) => f.fieldType == 'table' && f.tableConfig?.isLandscape == true))
+        ? 'landscape'
+        : orientation.value;
+
+    final headerConfig = DynamicReportHeaderConfig(
+      showCreator: showHeaderCreator.value,
+      showDate: showHeaderDate.value,
+      showDay: showHeaderDay.value,
+      showLine: showHeaderLine.value,
+    );
+
+    int tempFieldId = 10000;
+    final List<DynamicReportSection> previewSections = [];
+    final List<DynamicReportValue> sampleValues = [];
+
+    for (final sec in sections) {
+      final secFields = getFieldsForSection(sec.id ?? 0);
+      final List<DynamicReportField> mappedFields = [];
+      for (final f in secFields) {
+        final effectiveFieldId = f.id ?? (tempFieldId++);
+        mappedFields.add(f.copyWith(id: effectiveFieldId));
+        if (f.defaultValue != null && f.defaultValue!.isNotEmpty) {
+          sampleValues.add(DynamicReportValue(
+            recordId: 1,
+            fieldId: effectiveFieldId,
+            value: f.defaultValue,
+            fieldKey: f.fieldKey,
+          ));
+        }
+      }
+      previewSections.add(sec.copyWith(fields: mappedFields));
+    }
+
+    final previewReport = DynamicReport(
+      id: reportId.value ?? 0,
+      categoryId: categoryId.value,
+      name: nameController.text.trim().isEmpty ? 'معاينة التقرير الجديد' : nameController.text.trim(),
+      description: descController.text.trim(),
+      docNumber: docNumberController.text.trim().isEmpty ? 'SELSAL-DOC-01' : docNumberController.text.trim(),
+      versionNumber: versionNumberController.text.trim().isEmpty ? '01' : versionNumberController.text.trim(),
+      issueDate: issueDateController.text.trim().isEmpty
+          ? DateFormat('yyyy/MM/dd').format(DateTime.now())
+          : issueDateController.text.trim(),
+      headerConfigJson: headerConfig.toJsonString(),
+      icon: DynamicReportColorHelper.combineIconAndColor(
+        selectedIcon.value,
+        selectedIconColorHex.value,
+      ),
+      orientation: effectiveOrientation,
+      isActive: true,
+      approvalType: approvalType.value,
+      sections: previewSections,
+    );
+
+    final creatorName = Get.isRegistered<UserSessionService>()
+        ? UserSessionService.to.currentUserName.value
+        : 'أخصائي الجودة';
+
+    final sampleRecord = DynamicReportRecord(
+      id: 1,
+      reportId: previewReport.id ?? 0,
+      createdBy: creatorName,
+      createdAt: DateTime.now(),
+      status: ' قيد المعاينة ',
+      approvalStatus: 'Pending_QM',
+    );
+
+    return (report: previewReport, sampleRecord: sampleRecord, sampleValues: sampleValues);
   }
 
   @override

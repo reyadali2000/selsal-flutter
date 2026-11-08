@@ -56,6 +56,7 @@ class HygieneReportDisplayController extends GetxController {
 
   int get reportBranchId => branchId.value ?? 1;
   String get branchName => reportBranchId == 2 ? 'مصنع سنحان' : 'مصنع أرتل';
+  final shiftName = 'الأولى'.obs;
 
   @override
   void onInit() {
@@ -94,6 +95,10 @@ class HygieneReportDisplayController extends GetxController {
         supervisorName = (report['supervisor_name'] ?? report['supervisorName'])?.toString() ?? 'مفتش الجودة';
 
         branchId.value = report['branch_id'] ?? report['branchId'] ?? 1;
+        final rawShift = (report['shift_name'] ?? report['shiftName'] ?? report['shift'])?.toString();
+        if (rawShift != null && rawShift.trim().isNotEmpty) {
+          shiftName.value = rawShift.trim();
+        }
         approvalStatus.value = (report['approval_status'] ?? report['approvalStatus'])?.toString() ?? 'Pending_QM';
         qmApprovedBy.value = (report['qm_approved_by'] ?? report['qmApprovedBy'])?.toString();
         final qmAtStr = (report['qm_approved_at'] ?? report['qmApprovedAt'])?.toString();
@@ -995,6 +1000,8 @@ class HygieneReportDisplayController extends GetxController {
       correctiveActions: correctiveActions,
       reportDate: reportDate,
       supervisorName: supervisorName,
+      branchName: branchName,
+      shiftName: shiftName.value,
       approvalStatus: approvalStatus.value,
       qmApprovedBy: qmApprovedBy.value,
       qmApprovedAt: qmApprovedAt.value,

@@ -15,6 +15,8 @@ class HygieneReportPdfGenerator {
     required Map<int, String> correctiveActions,
     required String reportDate,
     required String supervisorName,
+    String branchName = 'مصنع أرتل',
+    String shiftName = 'الأولى',
     String approvalStatus = 'Approved',
     String? qmApprovedBy,
     DateTime? qmApprovedAt,
@@ -61,14 +63,18 @@ class HygieneReportPdfGenerator {
           pw.SizedBox(height: 6),
         ],
       ),
-      footer: (context) => ArabicPdfService.footer(
-        systemName: 'نظام إدارة المصنع - قائمة التفتيش على النظافة الشخصية',
+      footer: (context) => pw.Padding(
+        padding: const pw.EdgeInsets.only(top: 6),
+        child: _buildDocumentFooter(
+          reportDate: reportDate,
+          approvalStatus: approvalStatus,
+        ),
       ),
       build: (context) {
         return [
           ArabicPdfService.badgeTitle('قائمة التفتيش على النظافة الشخصية'),
           pw.SizedBox(height: 10),
-          _buildInfoTable(reportDate, supervisorName),
+          _buildInfoTable(reportDate, supervisorName, branchName: branchName, shiftName: shiftName),
           pw.SizedBox(height: 12),
           ..._buildMainTable(employees, criteria, complianceMatrix, correctiveActions),
           pw.SizedBox(height: 16),
@@ -101,6 +107,8 @@ class HygieneReportPdfGenerator {
     required Map<int, String> correctiveActions,
     required String reportDate,
     required String supervisorName,
+    String branchName = 'مصنع أرتل',
+    String shiftName = 'الأولى',
     String approvalStatus = 'Approved',
     String? qmApprovedBy,
     DateTime? qmApprovedAt,
@@ -120,6 +128,8 @@ class HygieneReportPdfGenerator {
       correctiveActions: correctiveActions,
       reportDate: reportDate,
       supervisorName: supervisorName,
+      branchName: branchName,
+      shiftName: shiftName,
       approvalStatus: approvalStatus,
       qmApprovedBy: qmApprovedBy,
       qmApprovedAt: qmApprovedAt,
@@ -136,7 +146,12 @@ class HygieneReportPdfGenerator {
     await ArabicPdfService.printPdf(pdfBytes);
   }
 
-  static pw.Widget _buildInfoTable(String reportDate, String supervisorName) {
+  static pw.Widget _buildInfoTable(
+    String reportDate,
+    String supervisorName, {
+    String branchName = 'مصنع أرتل',
+    String shiftName = 'الأولى',
+  }) {
     return pw.Container(
       decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.black, width: 1.0)),
       child: pw.Column(
@@ -145,7 +160,7 @@ class HygieneReportPdfGenerator {
           pw.Row(
             children: [
               _infoCell('الشركة (الفرع)', isLabel: true, flex: 2),
-              _infoCell('مصنع سلسال', isLabel: false, flex: 3),
+              _infoCell(branchName, isLabel: false, flex: 3),
               _infoCell('التاريخ', isLabel: true, flex: 2),
               _infoCell(reportDate, isLabel: false, flex: 3),
             ],
@@ -155,7 +170,7 @@ class HygieneReportPdfGenerator {
               _infoCell('مراقب السلامة الغذائية', isLabel: true, flex: 2),
               _infoCell(supervisorName, isLabel: false, flex: 3),
               _infoCell('الوردية', isLabel: true, flex: 2),
-              _infoCell('الأولى', isLabel: false, flex: 3),
+              _infoCell(shiftName, isLabel: false, flex: 3),
             ],
           ),
         ],
@@ -642,6 +657,75 @@ class HygieneReportPdfGenerator {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildDocumentFooter({
+    String reportDate = '',
+    String approvalStatus = 'Approved',
+  }) {
+    final qrPayload = 'SELSAL-QMS|DOC:SELSAL-PRP-WI-01-01|VER:01|ST:$approvalStatus|DT:$reportDate';
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey600),
+        borderRadius: pw.BorderRadius.circular(3),
+      ),
+      child: pw.Row(
+        children: [
+          pw.Expanded(
+            child: pw.Padding(
+              padding: const pw.EdgeInsets.all(5),
+              child: pw.Text(
+                'رقم الوثيقة: SELSAL-PRP-WI-01-01',
+                style: ArabicPdfService.regular(fontSize: 9),
+              ),
+            ),
+          ),
+          pw.Container(width: 1, height: 24, color: PdfColors.grey400),
+          pw.Expanded(
+            child: pw.Padding(
+              padding: const pw.EdgeInsets.all(5),
+              child: pw.Text(
+                'تاريخ الإصدار: 2026/07/15',
+                textAlign: pw.TextAlign.center,
+                style: ArabicPdfService.regular(fontSize: 9),
+              ),
+            ),
+          ),
+          pw.Container(width: 1, height: 24, color: PdfColors.grey400),
+          pw.Expanded(
+            child: pw.Padding(
+              padding: const pw.EdgeInsets.all(5),
+              child: pw.Text(
+                'إصدار رقم: 01',
+                textAlign: pw.TextAlign.center,
+                style: ArabicPdfService.regular(fontSize: 9),
+              ),
+            ),
+          ),
+          pw.Container(width: 1, height: 24, color: PdfColors.grey400),
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: pw.Row(
+              mainAxisSize: pw.MainAxisSize.min,
+              children: [
+                pw.Text(
+                  'ختم التحقق:',
+                  style: ArabicPdfService.regular(fontSize: 7.5, color: PdfColors.grey800),
+                ),
+                pw.SizedBox(width: 4),
+                pw.BarcodeWidget(
+                  barcode: pw.Barcode.qrCode(),
+                  data: qrPayload,
+                  width: 18,
+                  height: 18,
+                  drawText: false,
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

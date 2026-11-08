@@ -1317,12 +1317,14 @@ class DynamicReportValue {
   final int recordId;
   final int fieldId;
   final String? value;
+  final String? fieldKey;
 
   DynamicReportValue({
     this.id,
     required this.recordId,
     required this.fieldId,
     this.value,
+    this.fieldKey,
   });
 
   Map<String, dynamic> toMap() {
@@ -1331,15 +1333,17 @@ class DynamicReportValue {
       'record_id': recordId,
       'field_id': fieldId,
       'value': value,
+      if (fieldKey != null) 'field_key': fieldKey,
     };
   }
 
   factory DynamicReportValue.fromMap(Map<String, dynamic> map) {
     return DynamicReportValue(
       id: map['id'],
-      recordId: map['record_id'],
-      fieldId: map['field_id'],
+      recordId: map['record_id'] ?? map['recordId'] ?? 0,
+      fieldId: map['field_id'] ?? map['fieldId'] ?? 0,
       value: map['value']?.toString(), // Handle both string and numerical DB returns
+      fieldKey: (map['field_key'] ?? map['fieldKey'])?.toString(),
     );
   }
 }

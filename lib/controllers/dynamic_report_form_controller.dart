@@ -32,6 +32,7 @@ class DynamicReportFormController extends GetxController {
   var isDirectRecordEntry = false.obs;
   var drafts = <DynamicReportRecord>[].obs;
   var isLoadingDrafts = false.obs;
+  var isCloningLastRecord = false.obs;
   
   var report = Rxn<DynamicReport>();
   
@@ -364,6 +365,146 @@ class DynamicReportFormController extends GetxController {
     fieldValues[fieldId] = value;
     // أي إدخال جديد قد تُشتق منه الحقول المحسوبة
     _recalculateFields();
+  }
+
+  bool _isReportDateField(DynamicReportField field) {
+    final key = field.fieldKey.toLowerCase();
+    final lbl = field.label.toLowerCase();
+    return field.fieldType == 'date' || key.contains('date') || lbl.contains('تاريخ');
+  }
+
+  bool _isDayNameField(DynamicReportField field) {
+    final key = field.fieldKey.toLowerCase();
+    final lbl = field.label.toLowerCase();
+    return key.contains('day') || lbl.contains('اليوم');
+  }
+
+  /// نسخ البيانات الذكي من آخر سجل محفوظ لنفس التقرير (مع الإبقاء على تاريخ ويوم اليوم محدثين تلقائياً)
+  Future<void> cloneFromLatestRecord({bool openNewFormIfClosed = false}) async {
+    final repId = report.value?.id;
+    if (repId == null || isCloningLastRecord.value) return;
+
+    isCloningLastRecord.value = true;
+    try {
+      if (openNewFormIfClosed && !isFormOpen.value) {
+        startNewReport();
+      }
+
+      final allRecords = await DynamicReportsApiService.to.getRecords(reportId: repId);
+      final currentRecId = existingRecord.value?.id;
+      final candidates = allRecords
+          .where((r) =>
+              r.id != null &&
+              r.id != currentRecId &&
+              r.approvalStatus != 'Draft' &&
+              r.status != 'Draft')
+          .toList();
+
+      // إذا لم يوجد سجل مرسل، يمكن النسخ من أحدث مسودة سابقة
+      final fallbackCandidates = candidates.isNotEmpty
+          ? candidates
+          : allRecords.where((r) => r.id != null && r.id != currentRecId).toList();
+
+      if (fallbackCandidates.isEmpty) {
+        Get.snackbar(
+          'لا توجد سجلات سابقة',
+          'لم يتم العثور على أي سجل سابق لهذا التقرير لنسخ بياناته.',
+          backgroundColor: Colors.orange.shade800,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.TOP,
+        );
+        return;
+      }
+
+      fallbackCandidates.sort((a, b) => (b.createdAt ?? DateTime(2000)).compareTo(a.createdAt ?? DateTime(2000)));
+      final latestRecord = fallbackCandidates.first;
+
+      List<DynamicReportValue> sourceValues = [];
+      Map<String, dynamic> sourceDataJson = {};
+
+      if (latestRecord.id! > 0) {
+        final detail = await DynamicReportsApiService.to.getRecordDetailsWithValues(latestRecord.id!);
+        if (detail != null) {
+          sourceValues = (detail['values'] as List<DynamicReportValue>?) ?? [];
+          final recObj = detail['record'] as DynamicReportRecord?;
+          if (recObj?.dataJson != null && recObj!.dataJson!.trim().isNotEmpty) {
+            try {
+              final decoded = jsonDecode(recObj.dataJson!);
+              if (decoded is Map<String, dynamic>) {
+                sourceDataJson = decoded;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+
+      if (sourceDataJson.isEmpty && latestRecord.dataJson != null && latestRecord.dataJson!.trim().isNotEmpty) {
+        try {
+          final decoded = jsonDecode(latestRecord.dataJson!);
+          if (decoded is Map<String, dynamic>) {
+            sourceDataJson = decoded;
+          }
+        } catch (_) {}
+      }
+
+      final sections = report.value?.sections ?? [];
+      int copiedCount = 0;
+
+      for (final section in sections) {
+        final fields = section.fields ?? [];
+        for (final field in fields) {
+          if (field.id == null) continue;
+          // استثناء حقول التاريخ واليوم والحقول المحسوبة لتبقى محدثة بتاريخ اليوم
+          if (_isDayNameField(field) || _isReportDateField(field) || field.fieldType == 'calculated') {
+            continue;
+          }
+
+          String? clonedVal;
+          final matchedVal = sourceValues.firstWhereOrNull(
+            (v) => v.fieldId == field.id || (v.fieldKey != null && v.fieldKey == field.fieldKey),
+          );
+          if (matchedVal?.value != null && matchedVal!.value!.trim().isNotEmpty) {
+            clonedVal = matchedVal.value;
+          } else if (sourceDataJson.containsKey(field.fieldKey)) {
+            final entry = sourceDataJson[field.fieldKey];
+            if (entry is Map && entry['value'] != null) {
+              clonedVal = entry['value'].toString();
+            } else if (entry != null) {
+              clonedVal = entry.toString();
+            }
+          }
+
+          if (clonedVal != null && clonedVal.isNotEmpty) {
+            fieldValues[field.id!] = clonedVal;
+            if (textControllers.containsKey(field.id!)) {
+              textControllers[field.id!]!.text = clonedVal;
+            }
+            copiedCount++;
+          }
+        }
+      }
+
+      fieldValues.refresh();
+      _recalculateFields();
+
+      Get.snackbar(
+        'تم نسخ البيانات بنجاح',
+        'تم استيراد ($copiedCount) حقل/جدول من السجل رقم (#${latestRecord.id}) مع ضبط تاريخ ويوم اليوم تلقائياً.',
+        backgroundColor: const Color(0xFF00695C),
+        colorText: Colors.white,
+        snackPosition: SnackPosition.TOP,
+        icon: const Icon(Icons.content_copy_rounded, color: Colors.white),
+      );
+    } catch (e) {
+      Get.snackbar(
+        'تنبيه',
+        'تعذر نسخ البيانات من آخر سجل: $e',
+        backgroundColor: Colors.red.shade700,
+        colorText: Colors.white,
+      );
+    } finally {
+      isCloningLastRecord.value = false;
+    }
   }
 
   String get currentInspectorName {

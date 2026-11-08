@@ -1,4 +1,5 @@
 import '../widgets/corrective_action_submit_dialog.dart';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -1621,6 +1622,9 @@ class DynamicReportDisplayView extends StatelessWidget {
             // Visual Signatures Bar
             _buildVisualSignaturesBar(context, controller, record),
 
+            // Quick Compliance & Revision Digest Bar
+            _buildAuditAndRevisionSummaryBar(context, controller, record),
+
             // Actions Area
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1636,6 +1640,162 @@ class DynamicReportDisplayView extends StatelessWidget {
         ),
       );
     });
+  }
+
+  Widget _buildAuditAndRevisionSummaryBar(
+    BuildContext context,
+    DynamicReportDisplayController controller,
+    DynamicReportRecord record,
+  ) {
+    final rep = controller.report.value;
+    if (rep == null) return const SizedBox.shrink();
+
+    int outOfSpecCount = 0;
+    int nonCompliantItemsCount = 0;
+    final List<String> flaggedDetails = [];
+
+    for (final section in rep.sections ?? <DynamicReportSection>[]) {
+      for (final field in section.fields ?? <DynamicReportField>[]) {
+        final valObj = controller.values.firstWhereOrNull(
+          (v) =>
+              v.fieldId == field.id ||
+              (v.fieldKey != null && v.fieldKey == field.fieldKey),
+        );
+        final rawVal = valObj?.value?.trim() ?? '';
+        if (rawVal.isEmpty) continue;
+
+        final fType = field.fieldType.toLowerCase().trim();
+        if (['number', 'decimal', 'int', 'integer', 'float', 'double'].contains(fType)) {
+          final numVal = double.tryParse(rawVal);
+          if (numVal != null) {
+            if ((field.minValue != null && numVal < field.minValue!) ||
+                (field.maxValue != null && numVal > field.maxValue!)) {
+              outOfSpecCount++;
+              if (flaggedDetails.length < 3) {
+                flaggedDetails.add('${field.label}: $rawVal');
+              }
+            }
+          }
+        } else if (fType == 'table') {
+          try {
+            final decoded = jsonDecode(rawVal);
+            if (decoded is List) {
+              for (final row in decoded) {
+                if (row is Map) {
+                  bool rowHasIssue = false;
+                  row.forEach((k, v) {
+                    final s = v?.toString().trim() ?? '';
+                    if (s == 'غير مطابق' || s == 'مرفوض' || s == 'غير صالح' || s == 'لا') {
+                      rowHasIssue = true;
+                    }
+                  });
+                  if (rowHasIssue) nonCompliantItemsCount++;
+                }
+              }
+            }
+          } catch (_) {}
+        } else if (rawVal == 'غير مطابق' || rawVal == 'مرفوض' || rawVal == 'غير صالح') {
+          nonCompliantItemsCount++;
+          if (flaggedDetails.length < 3) {
+            flaggedDetails.add('${field.label}: $rawVal');
+          }
+        }
+      }
+    }
+
+    final int totalIssues = outOfSpecCount + nonCompliantItemsCount;
+    final int revisions = record.rejectionCount;
+    final bool hasCorrective = (record.correctiveAction ?? '').trim().isNotEmpty;
+
+    final Color barColor = totalIssues > 0
+        ? const Color(0xFFE65100)
+        : (revisions > 0 || hasCorrective
+            ? const Color(0xFF1565C0)
+            : const Color(0xFF2E7D32));
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: barColor.withValues(alpha: 0.06),
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                totalIssues > 0
+                    ? Icons.warning_amber_rounded
+                    : Icons.verified_user_rounded,
+                size: 15,
+                color: barColor,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                totalIssues == 0
+                    ? 'ملخص الفحص الآلي: جميع القراءات والبنود مطابقة للحدود القياسية'
+                    : 'ملخص الفحص الآلي: تم رصد ($totalIssues) ملاحظة/حيود عن المواصفة القياسية',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.bold,
+                  color: barColor,
+                ),
+              ),
+            ],
+          ),
+          if (outOfSpecCount > 0)
+            _buildAuditChip(
+              label: 'تجاوز حدود رقمية: $outOfSpecCount',
+              color: const Color(0xFFC62828),
+            ),
+          if (nonCompliantItemsCount > 0)
+            _buildAuditChip(
+              label: 'بنود غير مطابقة: $nonCompliantItemsCount',
+              color: const Color(0xFFE65100),
+            ),
+          if (revisions > 0)
+            _buildAuditChip(
+              label: 'دورات التصحيح/المراجعة: $revisions',
+              color: const Color(0xFF1565C0),
+            ),
+          if (flaggedDetails.isNotEmpty)
+            Text(
+              '(${flaggedDetails.join(" ، ")})',
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 10.5,
+                color: Colors.grey.shade700,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAuditChip({required String label, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontFamily: 'Tajawal',
+          fontSize: 10.5,
+          fontWeight: FontWeight.bold,
+          color: color,
+        ),
+      ),
+    );
   }
 
   Widget _buildVisualSignaturesBar(

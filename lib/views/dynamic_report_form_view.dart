@@ -139,13 +139,31 @@ class DynamicReportFormView extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 20),
-                AppButton.primary(
-                  label: 'بدء تقرير جديد',
-                  icon: Icons.add_circle_outline_rounded,
-                  height: 50,
-                  width: 240,
-                  color: reportColor,
-                  onPressed: controller.startNewReport,
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    AppButton.primary(
+                      label: 'بدء تقرير جديد',
+                      icon: Icons.add_circle_outline_rounded,
+                      height: 50,
+                      width: 220,
+                      color: reportColor,
+                      onPressed: controller.startNewReport,
+                    ),
+                    Obx(() => AppButton.outlined(
+                          label: controller.isCloningLastRecord.value
+                              ? 'جاري النسخ...'
+                              : 'بدء بالنسخ من آخر سجل',
+                          icon: Icons.content_copy_rounded,
+                          height: 50,
+                          width: 220,
+                          onPressed: controller.isCloningLastRecord.value
+                              ? null
+                              : () => controller.cloneFromLatestRecord(openNewFormIfClosed: true),
+                        )),
+                  ],
                 ),
               ],
             ),
@@ -486,7 +504,7 @@ class DynamicReportFormView extends StatelessWidget {
                 ),
               ),
 
-            // Inspector Info Header Card
+            // Inspector Info Header Card + Clone Previous Record Action
             AppCard(
               margin: const EdgeInsets.only(bottom: 16),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -525,6 +543,35 @@ class DynamicReportFormView extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (!controller.isEditMode.value)
+                    Obx(() => OutlinedButton.icon(
+                          onPressed: controller.isCloningLastRecord.value
+                              ? null
+                              : () => controller.cloneFromLatestRecord(),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: isDark ? AppColors.primaryLight : AppColors.primaryDark,
+                            side: BorderSide(
+                              color: isDark ? AppColors.primaryLight.withValues(alpha: 0.5) : AppColors.primaryDark.withValues(alpha: 0.4),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: controller.isCloningLastRecord.value
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.content_copy_rounded, size: 15),
+                          label: Text(
+                            controller.isCloningLastRecord.value ? 'جاري النسخ...' : 'نسخ من آخر سجل',
+                            style: const TextStyle(
+                              fontFamily: AppTheme.fontFamily,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        )),
                 ],
               ),
             ),
@@ -584,14 +631,14 @@ class DynamicReportFormView extends StatelessWidget {
                     )
                   else
                     ...section.fields!.map((field) {
-                      return DynamicFieldWidget(
-                        field: field,
-                        initialValue: controller.fieldValues[field.id],
-                        textController: controller.textControllers[field.id],
-                        onChanged: (val) {
-                          controller.updateFieldValue(field.id!, val);
-                        },
-                      );
+                      return Obx(() => DynamicFieldWidget(
+                            field: field,
+                            initialValue: controller.fieldValues[field.id],
+                            textController: controller.textControllers[field.id],
+                            onChanged: (val) {
+                              controller.updateFieldValue(field.id!, val);
+                            },
+                          ));
                     }),
                 ],
               );

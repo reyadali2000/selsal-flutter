@@ -20,10 +20,12 @@ class UserSignatureService {
   UserSignatureService._init();
 
   final Map<Object, Uint8List> _signatureCache = {};
+  final Set<int> _syncedUsersInSession = {};
 
   /// مسح الذاكرة المؤقتة للتواقيع لفرض جلب أحدث التواقيع المحدثة من قاعدة البيانات
   void clearCache() {
     _signatureCache.clear();
+    _syncedUsersInSession.clear();
   }
 
   /// توليد بصمة SHA-256 من مصفوفة بايتات
@@ -466,9 +468,36 @@ class UserSignatureService {
 
   /// جلب التوقيع المخصص المحفوظ للمستخدم فقط إن وُجد (دون توليد افتراضي)
   ///
-  /// يبحث محلياً أولاً، فإن لم يجده يطلبه من السيرفر ليتزامن التوقيع عبر
-  /// مختلف الأجهزة (يُستخدم في عرض التوقيعات داخل التقارير).
+  /// للمستخدمين الآخرين: يتحقق من السيرفر أولاً مرة واحدة في الجلسة لضمان جلب أحدث
+  /// توقيع محدّث عبر الأجهزة، ثم يحدّث SQLite المحلي، ويعود إلى SQLite المحلي عند انقطاع الاتصال.
   Future<Uint8List?> getCustomUserSignatureBytes(int userId) async {
+    if (_signatureCache.containsKey(userId)) {
+      return _signatureCache[userId];
+    }
+
+    final sessionUserId = Get.isRegistered<UserSessionService>()
+        ? UserSessionService.to.currentUser.value?.id
+        : null;
+    final bool isOtherUserUnsynced = sessionUserId != userId && !_syncedUsersInSession.contains(userId);
+
+    // 1. إذا كان التوقيع لمستخدم آخر ولم يُزامَن في هذه الجلسة بعد، نتحقق من السيرفر أولاً لمنع الكاش القديم
+    if (isOtherUserUnsynced && Get.isRegistered<AuthApiService>()) {
+      try {
+        final sigData = await AuthApiService.to.getUserSignature(userId);
+        _syncedUsersInSession.add(userId);
+        if (sigData != null && sigData.isNotEmpty) {
+          final clean = sigData.contains(',') ? sigData.split(',').last : sigData;
+          final bytes = base64Decode(clean);
+          _signatureCache[userId] = bytes;
+          await _cacheServerSignatureLocally(userId, clean, bytes);
+          return bytes;
+        }
+      } catch (e) {
+        debugPrint('Server signature check skipped (offline/error): $e');
+      }
+    }
+
+    // 2. البحث في قاعدة البيانات المحلية SQLite
     try {
       final db = await DatabaseHelper.instance.database;
       final rows = await db.query(
@@ -490,50 +519,50 @@ class UserSignatureService {
       debugPrint('Error loading custom signature from DB: $e');
     }
 
-    // إن لم يوجد التوقيع محلياً، يُطلَب من السيرفر (مزامنة تنازلية)
-    try {
-      if (Get.isRegistered<AuthApiService>()) {
+    // 3. إن لم يوجد التوقيع محلياً، يُطلَب من السيرفر (مزامنة تنازلية)
+    if (!_syncedUsersInSession.contains(userId) && Get.isRegistered<AuthApiService>()) {
+      try {
         final sigData = await AuthApiService.to.getUserSignature(userId);
+        _syncedUsersInSession.add(userId);
         if (sigData != null && sigData.isNotEmpty) {
           final clean = sigData.contains(',') ? sigData.split(',').last : sigData;
           final bytes = base64Decode(clean);
           _signatureCache[userId] = bytes;
-
-          // تخزين التوقيع محلياً في SQLite أيضاً ليتوفر فوراً عند انقطاع الاتصال
-          try {
-            final db = await DatabaseHelper.instance.database;
-            final now = DateTime.now().toIso8601String();
-            final hash = computeHash(bytes);
-            await _ensureLocalUserRow(userId);
-            final existing = await db.query(
-              'user_signatures',
-              columns: ['id'],
-              where: 'user_id = ? AND is_active = 1',
-              whereArgs: [userId],
-              limit: 1,
-            );
-            if (existing.isEmpty) {
-              await db.insert('user_signatures', {
-                'user_id': userId,
-                'signature_type': 'drawn_png',
-                'signature_data': clean,
-                'signature_hash': hash,
-                'is_active': 1,
-                'created_at': now,
-                'updated_at': now,
-              });
-            }
-          } catch (e) {
-            debugPrint('Error caching signature to local SQLite: $e');
-          }
-
+          await _cacheServerSignatureLocally(userId, clean, bytes);
           return bytes;
         }
+      } catch (e) {
+        debugPrint('Failed to fetch signature from server: $e');
       }
-    } catch (e) {
-      debugPrint('Failed to fetch signature from server: $e');
     }
     return null;
+  }
+
+  /// تحديث التوقيع المحفوظ في SQLite المحلي بنسخة السيرفر الحديثة
+  Future<void> _cacheServerSignatureLocally(int userId, String cleanBase64, Uint8List bytes) async {
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final now = DateTime.now().toIso8601String();
+      final hash = computeHash(bytes);
+      await _ensureLocalUserRow(userId);
+      await db.update(
+        'user_signatures',
+        {'is_active': 0, 'updated_at': now},
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
+      await db.insert('user_signatures', {
+        'user_id': userId,
+        'signature_type': 'drawn_png',
+        'signature_data': cleanBase64,
+        'signature_hash': hash,
+        'is_active': 1,
+        'created_at': now,
+        'updated_at': now,
+      });
+    } catch (e) {
+      debugPrint('Error caching signature to local SQLite: $e');
+    }
   }
 
   /// التحقق مما إذا كان المستخدم يملك توقيعاً مخصصاً محفوظاً
@@ -566,9 +595,44 @@ class UserSignatureService {
         debugPrint('Failed to delete signature from server: $e');
       }
 
-      _signatureCache.clear();
+      clearCache();
     } catch (e) {
       debugPrint('Error deleting user signature: $e');
+    }
+  }
+
+  /// فحص وتحجيم أي صورة توقيع مرفوعة إلى أبعاد قياسية (أقصى 600×240) بصيغة PNG شفافة
+  Future<Uint8List?> _normalizeSignaturePngBytes(Uint8List rawBytes) async {
+    try {
+      final codec = await ui.instantiateImageCodec(rawBytes);
+      final frame = await codec.getNextFrame();
+      final srcImage = frame.image;
+
+      const int maxWidth = 600;
+      const int maxHeight = 240;
+
+      if (srcImage.width <= maxWidth && srcImage.height <= maxHeight) {
+        final byteData = await srcImage.toByteData(format: ui.ImageByteFormat.png);
+        return byteData?.buffer.asUint8List() ?? rawBytes;
+      }
+
+      final double scaleX = maxWidth / srcImage.width;
+      final double scaleY = maxHeight / srcImage.height;
+      final double scale = scaleX < scaleY ? scaleX : scaleY;
+      final int targetW = (srcImage.width * scale).round().clamp(1, maxWidth);
+      final int targetH = (srcImage.height * scale).round().clamp(1, maxHeight);
+
+      final resizedCodec = await ui.instantiateImageCodec(
+        rawBytes,
+        targetWidth: targetW,
+        targetHeight: targetH,
+      );
+      final resizedFrame = await resizedCodec.getNextFrame();
+      final byteData = await resizedFrame.image.toByteData(format: ui.ImageByteFormat.png);
+      return byteData?.buffer.asUint8List() ?? rawBytes;
+    } catch (e) {
+      debugPrint('Invalid or corrupt signature image file: $e');
+      return null;
     }
   }
 
@@ -582,10 +646,14 @@ class UserSignatureService {
       );
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
+        Uint8List? rawBytes;
         if (file.bytes != null) {
-          return file.bytes!;
+          rawBytes = file.bytes!;
         } else if (file.path != null) {
-          return await File(file.path!).readAsBytes();
+          rawBytes = await File(file.path!).readAsBytes();
+        }
+        if (rawBytes != null) {
+          return await _normalizeSignaturePngBytes(rawBytes);
         }
       }
     } catch (e) {
@@ -598,9 +666,14 @@ class UserSignatureService {
   Future<Uint8List?> pickSignatureImageFromGallery() async {
     try {
       final picker = ImagePicker();
-      final picked = await picker.pickImage(source: ImageSource.gallery);
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 800,
+        maxHeight: 400,
+      );
       if (picked != null) {
-        return await picked.readAsBytes();
+        final rawBytes = await picked.readAsBytes();
+        return await _normalizeSignaturePngBytes(rawBytes);
       }
     } catch (e) {
       debugPrint('Error picking signature via ImagePicker: $e');

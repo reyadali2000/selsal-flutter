@@ -111,6 +111,8 @@ class HygieneReportDisplayView extends StatelessWidget {
                                 _buildMainTable(context),
                                 const SizedBox(height: 24),
                                 _buildSignaturesTable(currentTableWidth),
+                                const SizedBox(height: 16),
+                                _buildFooter(currentTableWidth),
                                 const SizedBox(height: 24),
                               ],
                             ),
@@ -171,7 +173,7 @@ class HygieneReportDisplayView extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               _infoCell('الشركة (الفرع)', isLabel: true, width: 120),
-              _infoCell('مصنع سلسال', isLabel: false, width: 180),
+              _infoCell(controller.branchName, isLabel: false, width: 180),
               _infoCell('التاريخ', isLabel: true, width: 120),
               _infoCell(controller.reportDate, isLabel: false, width: 180),
             ],
@@ -182,7 +184,7 @@ class HygieneReportDisplayView extends StatelessWidget {
               _infoCell('مراقب السلامة الغذائية', isLabel: true, width: 120),
               _infoCell(controller.supervisorName, isLabel: false, width: 180),
               _infoCell('الوردية', isLabel: true, width: 120),
-              _infoCell('الأولى', isLabel: false, width: 180),
+              _infoCell(controller.shiftName.value, isLabel: false, width: 180),
             ],
           ),
         ],
@@ -527,6 +529,51 @@ class HygieneReportDisplayView extends StatelessWidget {
                     : ((status == 'Approved' || status == 'Closed') ? controller.gmSignatureBytes.value : null),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFooter(double width) {
+    return Container(
+      width: width,
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade500),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+              child: Text(
+                'رقم الوثيقة: SELSAL-PRP-WI-01-01',
+                style: TextStyle(fontFamily: 'Tajawal', fontSize: 12),
+              ),
+            ),
+          ),
+          Container(width: 1, height: 30, color: Colors.grey.shade400),
+          const Expanded(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+              child: Text(
+                'تاريخ الإصدار: 2026/07/15',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Tajawal', fontSize: 12),
+              ),
+            ),
+          ),
+          Container(width: 1, height: 30, color: Colors.grey.shade400),
+          const Expanded(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+              child: Text(
+                'إصدار رقم: 01',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Tajawal', fontSize: 12),
+              ),
+            ),
           ),
         ],
       ),

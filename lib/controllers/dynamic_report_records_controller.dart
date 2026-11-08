@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
@@ -7,10 +8,12 @@ import '../models/dynamic_report_models.dart';
 import '../services/user_session_service.dart';
 import '../services/api/api.dart';
 import '../services/sync/sync_manager.dart';
+import '../utils/dynamic_report_pdf_generator.dart';
 
 class DynamicReportRecordsController extends GetxController {
   
   final isLoading = true.obs;
+  final isExportingBatch = false.obs;
   
   final records = <DynamicReportRecord>[].obs;
   final TextEditingController searchController = TextEditingController();
@@ -184,6 +187,68 @@ class DynamicReportRecordsController extends GetxController {
       Get.snackbar('خطأ', 'حدث خطأ أثناء حذف السجل: $e');
     } finally {
       isLoading.value = false;
+    }
+  }
+
+  /// بناء وتوليد حزمة التدقيق المجمّعة (Batch Audit Pack PDF) للسجلات المعروضة حالياً
+  Future<Uint8List?> generateBatchAuditPackBytes({bool approvedOnly = false}) async {
+    if (report == null) return null;
+    final targetRecords = approvedOnly
+        ? filteredRecords
+            .where((r) => r.approvalStatus == 'Approved' || r.approvalStatus == 'Closed')
+            .toList()
+        : filteredRecords;
+
+    if (targetRecords.isEmpty) {
+      Get.snackbar(
+        'تنبيه',
+        approvedOnly
+            ? 'لا توجد سجلات معتمدة ضمن الفلتر الحالي لتصديرها'
+            : 'لا توجد سجلات معروضة حالياً لتصديرها',
+        backgroundColor: Colors.orange.shade800,
+        colorText: Colors.white,
+      );
+      return null;
+    }
+
+    isExportingBatch.value = true;
+    try {
+      final List<({DynamicReportRecord record, List<DynamicReportValue> values, List<ReportApproval>? approvals})> entries = [];
+      for (final rec in targetRecords) {
+        if (rec.id == null) continue;
+        List<DynamicReportValue> vals = [];
+        List<ReportApproval>? apps;
+        try {
+          final details = await DynamicReportsApiService.to.getRecordDetailsWithValues(rec.id!);
+          if (details != null && details['values'] is List<DynamicReportValue>) {
+            vals = details['values'] as List<DynamicReportValue>;
+          }
+          apps = await DynamicReportsApiService.to.getApprovalTrail(rec.id!);
+        } catch (_) {}
+        entries.add((record: rec, values: vals, approvals: apps));
+      }
+
+      final filterLabel = approvedOnly
+          ? 'السجلات المعتمدة فقط'
+          : (statusFilter.value != 'all'
+              ? ApprovalStatus.shortLabel(statusFilter.value)
+              : 'كافة السجلات المعروضة');
+
+      return await DynamicReportPdfGenerator.generateBatchAuditPack(
+        report: report!,
+        entries: entries,
+        filterLabel: filterLabel,
+      );
+    } catch (e) {
+      Get.snackbar(
+        'خطأ',
+        'حدث خطأ أثناء تجهيز حزمة التدقيق المجمّعة: $e',
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
+      return null;
+    } finally {
+      isExportingBatch.value = false;
     }
   }
   bool _hasRecordsChanged(List<DynamicReportRecord> oldList, List<DynamicReportRecord> newList) {

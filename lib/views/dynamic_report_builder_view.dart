@@ -1,7 +1,10 @@
 import '../utils/dynamic_report_color_helper.dart';
+import '../utils/dynamic_report_pdf_generator.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart' hide TextDirection;
+import 'package:pdf/pdf.dart';
+import 'package:printing/printing.dart';
 import '../controllers/dynamic_report_builder_controller.dart';
 import '../models/dynamic_report_models.dart';
 import '../utils/calculated_field_helper.dart';
@@ -32,6 +35,19 @@ class DynamicReportBuilderView extends StatelessWidget {
         centerTitle: true,
         elevation: 1,
         actions: [
+          TextButton.icon(
+            onPressed: () => _showLivePdfPreview(context, controller),
+            icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.white, size: 20),
+            label: const Text(
+              'معاينة PDF',
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.save, color: Colors.white),
             tooltip: 'حفظ التقرير',
@@ -2387,6 +2403,66 @@ class DynamicReportBuilderView extends StatelessWidget {
             child: const Text('تطبيق اللون', style: TextStyle(fontFamily: 'Tajawal')),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showLivePdfPreview(
+    BuildContext context,
+    DynamicReportBuilderController controller,
+  ) {
+    if (controller.sections.isEmpty) {
+      Get.snackbar(
+        'تنبيه',
+        'يرجى إضافة قسم واحد على الأقل لمعاينة شكل التقرير المطبوع',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.orange.shade800,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    final previewData = controller.buildLivePreviewModel();
+    final isLandscape = previewData.report.orientation == 'landscape';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog.fullscreen(
+        child: Scaffold(
+          backgroundColor: AppColors.canvas,
+          appBar: AppBar(
+            backgroundColor: AppColors.primaryDark,
+            foregroundColor: Colors.white,
+            title: Text(
+              'معاينة ورقة الطباعة (PDF) — ${previewData.report.name}',
+              style: const TextStyle(
+                fontFamily: 'Tajawal',
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Colors.white,
+              ),
+            ),
+            leading: IconButton(
+              icon: const Icon(Icons.close_rounded, color: Colors.white),
+              tooltip: 'إغلاق المعاينة',
+              onPressed: () => Navigator.of(ctx).pop(),
+            ),
+          ),
+          body: PdfPreview(
+            build: (_) => DynamicReportPdfGenerator.generate(
+              report: previewData.report,
+              record: previewData.sampleRecord,
+              values: previewData.sampleValues,
+            ),
+            allowPrinting: true,
+            allowSharing: true,
+            canChangeOrientation: false,
+            canChangePageFormat: false,
+            initialPageFormat:
+                isLandscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4,
+            maxPageWidth: isLandscape ? 1050 : 800,
+          ),
+        ),
       ),
     );
   }

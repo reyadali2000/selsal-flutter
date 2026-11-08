@@ -27,11 +27,101 @@ class _DynamicTableWidgetState extends State<DynamicTableWidget> {
   late DynamicTableConfig config;
   List<Map<String, dynamic>> tableRows = [];
   final ScrollController _horizontalScrollController = ScrollController();
+  int _syncVersion = 0;
 
   @override
   void dispose() {
     _horizontalScrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant DynamicTableWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final newRaw = widget.initialValue?.toString() ?? '';
+    final curRaw = jsonEncode(tableRows);
+    if (newRaw.isNotEmpty && newRaw != curRaw) {
+      try {
+        final decoded = jsonDecode(newRaw);
+        if (decoded is List) {
+          setState(() {
+            tableRows = decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+            _syncVersion++;
+          });
+        }
+      } catch (_) {}
+    }
+  }
+
+  bool _isCorrectiveOrNotesCol(DynamicTableColumn col) {
+    final k = col.key.toLowerCase();
+    final t = col.title;
+    return k.contains('corrective') ||
+        k.contains('action') ||
+        k.contains('note') ||
+        t.contains('إجراء') ||
+        t.contains('اجراء') ||
+        t.contains('تصحيحي') ||
+        t.contains('ملاحظات');
+  }
+
+  bool _isCellNonCompliant(DynamicTableColumn col, dynamic rawVal) {
+    if (rawVal == null) return false;
+    final val = rawVal.toString().trim();
+    if (val.isEmpty) return false;
+
+    final title = col.title;
+    // الأعمدة التي يكون فيها "نعم" مؤشراً سلبياً (مثل وجود حشرات أو عيوب أو تسريب)
+    final bool isDefectQuestion = title.contains('حشرات') ||
+        title.contains('قوارض') ||
+        title.contains('تسريب') ||
+        title.contains('عيوب') ||
+        title.contains('تلوث') ||
+        title.contains('صدأ');
+
+    if (isDefectQuestion) {
+      return val == 'نعم' || val == 'يوجد' || val == 'غير مطابق' || val == 'مرفوض';
+    }
+
+    const negativeValues = {
+      'لا',
+      'غير مطابق',
+      'مرفوض',
+      'غير صالح',
+      'غير نظيف',
+      'غير ملتزم',
+      'تالفة',
+      'رديئة',
+      'ملوثة',
+    };
+    return negativeValues.contains(val);
+  }
+
+  bool _isRowNonCompliant(Map<String, dynamic> rowData) {
+    for (final col in config.columns) {
+      if (_isCorrectiveOrNotesCol(col)) continue;
+      if (_isCellNonCompliant(col, rowData[col.key])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _hasCorrectiveColumn() {
+    return config.columns.any(_isCorrectiveOrNotesCol);
+  }
+
+  bool _isRowMissingCorrectiveAction(Map<String, dynamic> rowData) {
+    if (!_isRowNonCompliant(rowData)) return false;
+    final correctiveCols = config.columns.where(_isCorrectiveOrNotesCol).toList();
+    if (correctiveCols.isEmpty) return false;
+    for (final col in correctiveCols) {
+      final v = rowData[col.key]?.toString().trim() ?? '';
+      if (v.isNotEmpty && v != '-' && v != '—') {
+        return false;
+      }
+    }
+    return true;
   }
 
   void _scrollTable(double delta) {
@@ -245,8 +335,20 @@ class _DynamicTableWidgetState extends State<DynamicTableWidget> {
                   rows: List.generate(tableRows.length, (rowIndex) {
                     final rowData = tableRows[rowIndex];
                     final isColored = (rowIndex % 2 == 0);
+                    final isNonCompliant = _isRowNonCompliant(rowData);
+                    final isMissingCorrective = _isRowMissingCorrectiveAction(rowData);
                     return DataRow(
                       color: WidgetStateProperty.resolveWith<Color?>((states) {
+                        if (isMissingCorrective) {
+                          return isDark
+                              ? Colors.red.shade900.withValues(alpha: 0.25)
+                              : const Color(0xFFFFEBEE);
+                        }
+                        if (isNonCompliant) {
+                          return isDark
+                              ? Colors.amber.shade900.withValues(alpha: 0.20)
+                              : const Color(0xFFFFF8E1);
+                        }
                         if (isColored) {
                           return isDark
                               ? const Color(0xFFD9E1F3).withValues(alpha: 0.22)
@@ -255,7 +357,27 @@ class _DynamicTableWidgetState extends State<DynamicTableWidget> {
                         return isDark ? Colors.transparent : Colors.white;
                       }),
                       cells: [
-                        DataCell(Text('${rowIndex + 1}', style: const TextStyle(fontFamily: AppTheme.fontFamily))),
+                        DataCell(
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('${rowIndex + 1}', style: const TextStyle(fontFamily: AppTheme.fontFamily)),
+                              if (isNonCompliant) ...[
+                                const SizedBox(width: 4),
+                                Tooltip(
+                                  message: isMissingCorrective
+                                      ? 'يوجد عدم مطابقة في هذا الصف — يرجى توثيق الإجراء التصحيحي'
+                                      : 'تم رصد عدم مطابقة وتوثيق الملاحظة/الإجراء التصحيحي',
+                                  child: Icon(
+                                    isMissingCorrective ? Icons.warning_amber_rounded : Icons.info_outline_rounded,
+                                    size: 15,
+                                    color: isMissingCorrective ? Colors.red.shade700 : Colors.amber.shade800,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
                         ...columns.map((col) {
                           return DataCell(
                             _buildCell(col, rowData, rowIndex, isDark),
@@ -277,6 +399,7 @@ class _DynamicTableWidgetState extends State<DynamicTableWidget> {
             ),
           ),
         ),
+        _buildNonComplianceSummaryBanner(isDark),
         if (columns.length > 4) ...[
           const SizedBox(height: 6),
           Row(
@@ -720,12 +843,14 @@ class _DynamicTableWidgetState extends State<DynamicTableWidget> {
       case 'decimal':
       case 'text':
       default:
-        final bool isLongText = col.key == 'corrective_action' || col.key == 'notes';
+        final bool isLongText = col.key == 'corrective_action' || col.key == 'notes' || _isCorrectiveOrNotesCol(col);
         final double fieldWidth = isLongText ? 220 : (col.key == 'employee' ? 140 : 100);
+        final bool isCorrectiveNeeded = _isCorrectiveOrNotesCol(col) && _isRowMissingCorrectiveAction(rowData);
         return Container(
           width: fieldWidth,
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: TextFormField(
+            key: ValueKey('cell_${_syncVersion}_${rowIndex}_${col.key}'),
             initialValue: currentValue?.toString() ?? '',
             keyboardType: col.type == 'decimal'
                 ? const TextInputType.numberWithOptions(decimal: true)
@@ -737,20 +862,89 @@ class _DynamicTableWidgetState extends State<DynamicTableWidget> {
             ),
             decoration: InputDecoration(
               isDense: true,
+              filled: isCorrectiveNeeded,
+              fillColor: isCorrectiveNeeded
+                  ? (isDark ? Colors.red.shade900.withValues(alpha: 0.25) : Colors.red.shade50)
+                  : null,
               contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              hintText: col.title,
+              hintText: isCorrectiveNeeded ? '⚠️ وثّق الإجراء التصحيحي...' : col.title,
               hintStyle: TextStyle(
                 fontFamily: AppTheme.fontFamily,
                 fontSize: 11,
-                color: isDark ? AppColors.darkMuted : Colors.grey,
+                fontWeight: isCorrectiveNeeded ? FontWeight.bold : FontWeight.normal,
+                color: isCorrectiveNeeded
+                    ? Colors.red.shade700
+                    : (isDark ? AppColors.darkMuted : Colors.grey),
               ),
+              enabledBorder: isCorrectiveNeeded
+                  ? OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: BorderSide(color: Colors.red.shade400, width: 1.2),
+                    )
+                  : null,
             ),
             onChanged: (val) {
+              final wasMissing = _isRowMissingCorrectiveAction(rowData);
               rowData[col.key] = val;
+              final nowMissing = _isRowMissingCorrectiveAction(rowData);
+              if (wasMissing != nowMissing) {
+                setState(() {});
+              }
               _notifyChange();
             },
           ),
         );
     }
+  }
+
+  Widget _buildNonComplianceSummaryBanner(bool isDark) {
+    int nonCompliantCount = 0;
+    int missingCorrectiveCount = 0;
+    for (final row in tableRows) {
+      if (_isRowNonCompliant(row)) {
+        nonCompliantCount++;
+        if (_isRowMissingCorrectiveAction(row)) {
+          missingCorrectiveCount++;
+        }
+      }
+    }
+
+    if (nonCompliantCount == 0) return const SizedBox.shrink();
+
+    final bool hasMissing = missingCorrectiveCount > 0 && _hasCorrectiveColumn();
+    final Color bannerColor = hasMissing ? Colors.red.shade700 : Colors.amber.shade800;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bannerColor.withValues(alpha: isDark ? 0.18 : 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: bannerColor.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            hasMissing ? Icons.warning_amber_rounded : Icons.fact_check_rounded,
+            size: 18,
+            color: bannerColor,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              hasMissing
+                  ? 'تنبيه رقابة الجودة: تم رصد ($nonCompliantCount) بند غير مطابق، منها ($missingCorrectiveCount) بند بدون توثيق إجراء تصحيحي أو ملاحظة.'
+                  : 'مؤشر رقابة الجودة: تم رصد ($nonCompliantCount) بند غير مطابق وتم توثيق الإجراءات التصحيحية/الملاحظات المرتبطة بها.',
+              style: TextStyle(
+                fontFamily: AppTheme.fontFamily,
+                fontSize: 11.5,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : bannerColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
