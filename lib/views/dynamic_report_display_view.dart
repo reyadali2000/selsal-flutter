@@ -2717,7 +2717,7 @@ class DynamicReportDisplayView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         FactoryManagerRejectionCard(
-          title: '${controller.report.value?.name ?? "تقرير"} #${record.id}',
+          title: '${controller.report.value?.name ?? "تقرير"} (${record.effectiveRecordCode})',
           subtitle: record.effectiveBranchName,
           status: status,
           rejectionReason: record.rejectionReason,
@@ -2778,7 +2778,7 @@ class DynamicReportDisplayView extends StatelessWidget {
   ) async {
     final action = await CorrectiveActionSubmitDialog.show(
       Get.context!,
-      reportTitle: '${controller.report.value?.name ?? "تقرير"} #${record.id}',
+      reportTitle: '${controller.report.value?.name ?? "تقرير"} (${record.effectiveRecordCode})',
       rejectionReason: record.rejectionReason ?? 'غير محدد',
       rejectedBy: record.rejectedBy,
       initialCorrectiveAction: record.correctiveAction,
@@ -2801,7 +2801,7 @@ class DynamicReportDisplayView extends StatelessWidget {
 
     final decision = await GmDecisionDialog.show(
       Get.context!,
-      reportTitle: '${controller.report.value?.name ?? "تقرير"} #${record.id}',
+      reportTitle: '${controller.report.value?.name ?? "تقرير"} (${record.effectiveRecordCode})',
       correctiveAction: record.correctiveAction ?? 'غير محدد',
       correctiveOwner: record.correctiveOwner ?? 'غير محدد',
       severity: record.severityLevel,
@@ -2837,7 +2837,7 @@ class DynamicReportDisplayView extends StatelessWidget {
     final payload = await RejectReportDialog.show(
       context,
       reportTitle:
-          '${controller.report.value?.name ?? "تقرير"} #${record?.id ?? "?"}',
+          '${controller.report.value?.name ?? "تقرير"} (${record?.effectiveRecordCode ?? "?"})',
       reportSubtitle: record?.effectiveBranchName,
       rejectionCount: record?.rejectionCount ?? 0,
     );

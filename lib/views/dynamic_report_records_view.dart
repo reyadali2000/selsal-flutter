@@ -302,7 +302,7 @@ class DynamicReportRecordsView extends StatelessWidget {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'سجل رقم #${record.id}',
+                                          record.effectiveRecordCode,
                                           style: const TextStyle(
                                             fontFamily: 'Tajawal',
                                             fontWeight: FontWeight.bold,
@@ -473,7 +473,7 @@ class DynamicReportRecordsView extends StatelessWidget {
     AppDialog.confirm(
       context: context,
       title: 'تأكيد حذف السجل',
-      message: 'هل أنت متأكد من حذف السجل رقم (${record.id})؟ لن يمكنك التراجع عن هذا الإجراء.',
+      message: 'هل أنت متأكد من حذف السجل (${record.effectiveRecordCode})؟ لن يمكنك التراجع عن هذا الإجراء.',
       confirmLabel: 'حذف',
       confirmColor: Colors.redAccent,
       onConfirm: () => controller.deleteRecord(record.id!),

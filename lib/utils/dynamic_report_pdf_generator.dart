@@ -215,7 +215,7 @@ class DynamicReportPdfGenerator {
                           _indexCell(displayEntries[i].record.effectiveBranchName, ttf),
                           _indexCell(formatCreatorName(displayEntries[i].record.createdBy), ttf),
                           _indexCell(formatArabicDate(displayEntries[i].record.createdAt), ttf),
-                          _indexCell('#${displayEntries[i].record.id ?? "--"}', ttfBold),
+                          _indexCell(displayEntries[i].record.effectiveRecordCode, ttfBold),
                           _indexCell('${i + 1}', ttfBold),
                         ],
                       ),
@@ -709,7 +709,7 @@ class DynamicReportPdfGenerator {
   }) {
     final creator = formatCreatorName(record.createdBy);
     final statusText = formatArabicStatus(record.approvalStatus);
-    final recId = record.id != null ? '#${record.id}' : '#--';
+    final recId = record.effectiveRecordCode;
     final cfg = headerConfig ?? const DynamicReportHeaderConfig();
 
     pw.Widget item(String label, String value, {bool isStatus = false}) {
@@ -894,7 +894,7 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
     final List<pw.Widget> items = [];
 
     // 1. رقم السجل (إجباري دائم لا يمكن إخفاؤه)
-    items.add(pw.Text('رقم السجل: ${record.id ?? "--"}', style: pw.TextStyle(font: ttfBold, fontSize: 10)));
+    items.add(pw.Text('رقم السجل: ${record.effectiveRecordCode}', style: pw.TextStyle(font: ttfBold, fontSize: 10)));
 
     // 2. مُعد التقرير (اختياري)
     if (cfg.showCreator) {
@@ -1595,10 +1595,10 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
         ? report.issueDate!.trim()
         : '2026/07/15';
 
-    final recId = record?.id ?? 0;
+    final recCode = record?.effectiveRecordCode ?? (record?.id != null ? '#${record!.id}' : '0');
     final recStatus = record?.approvalStatus ?? 'Approved';
     final recDate = DateFormat('yyyy-MM-dd').format(record?.createdAt ?? DateTime.now());
-    final qrPayload = 'SELSAL-QMS|DOC:$docNum|VER:$versionNum|REC:#$recId|ST:$recStatus|DT:$recDate';
+    final qrPayload = 'SELSAL-QMS|DOC:$docNum|VER:$versionNum|REC:$recCode|ST:$recStatus|DT:$recDate';
 
     return pw.Container(
       padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),

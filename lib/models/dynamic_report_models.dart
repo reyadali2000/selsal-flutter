@@ -1000,6 +1000,19 @@ class DynamicReportRecord {
   final String? summaryNotes;
   final String? dataJson; // المحرك الهجين: حقل JSON لحفظ كل بيانات التقرير
   final String? clientUuid; // معرّف فريد للتقرير من جهة العميل لمنع التكرار (Idempotency)
+  final int? recordSerial; // الرقم التسلسلي المستقل للتقرير داخل نفس السنة (1, 2, 3...)
+  final String? recordCode; // كود السجل الذكي القياسي المنسق (مثال: SELSAL-PRP-WI-04-01-2026-0001)
+
+  /// الكود المعروض الرسمي للسجل (مع الحفاظ على التوافقية العكسية إذا لم يتوفر الكود الذكي)
+  String get effectiveRecordCode {
+    if (recordCode != null && recordCode!.trim().isNotEmpty) {
+      return recordCode!.trim();
+    }
+    if (recordSerial != null && recordSerial! > 0) {
+      return '#$recordSerial';
+    }
+    return '#${id ?? 0}';
+  }
 
   String get effectiveBranchName => branchName != null && branchName!.isNotEmpty
       ? branchName!
@@ -1073,6 +1086,8 @@ class DynamicReportRecord {
     this.summaryNotes,
     this.dataJson,
     this.clientUuid,
+    this.recordSerial,
+    this.recordCode,
   });
 
   Map<String, dynamic> toMap() {
@@ -1123,6 +1138,8 @@ class DynamicReportRecord {
       'summary_notes': summaryNotes,
       'data_json': dataJson,
       'client_uuid': clientUuid,
+      'record_serial': recordSerial,
+      'record_code': recordCode,
     };
   }
 
@@ -1210,6 +1227,12 @@ class DynamicReportRecord {
       summaryNotes: (map['summary_notes'] ?? map['summaryNotes'])?.toString(),
       dataJson: (map['data_json'] ?? map['dataJson'])?.toString(),
       clientUuid: (map['client_uuid'] ?? map['clientUuid'])?.toString(),
+      recordSerial: map['record_serial'] is int
+          ? map['record_serial'] as int
+          : (map['recordSerial'] is int
+              ? map['recordSerial'] as int
+              : int.tryParse((map['record_serial'] ?? map['recordSerial'] ?? '').toString())),
+      recordCode: (map['record_code'] ?? map['recordCode'])?.toString(),
     );
   }
 
@@ -1260,6 +1283,8 @@ class DynamicReportRecord {
     String? summaryNotes,
     String? dataJson,
     String? clientUuid,
+    int? recordSerial,
+    String? recordCode,
   }) {
     return DynamicReportRecord(
       id: id ?? this.id,
@@ -1308,6 +1333,8 @@ class DynamicReportRecord {
       summaryNotes: summaryNotes ?? this.summaryNotes,
       dataJson: dataJson ?? this.dataJson,
       clientUuid: clientUuid ?? this.clientUuid,
+      recordSerial: recordSerial ?? this.recordSerial,
+      recordCode: recordCode ?? this.recordCode,
     );
   }
 }

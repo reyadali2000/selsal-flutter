@@ -652,6 +652,8 @@ class DatabaseHelper {
         'rejection_count',
         'INTEGER DEFAULT 0',
       );
+      await _safeAddColumn(db, 'dr_records', 'record_serial', 'INTEGER');
+      await _safeAddColumn(db, 'dr_records', 'record_code', 'TEXT');
 
       // فك قيد المفتاح الأجنبي عن dr_values إن وجد لمنع خطأ SQLite (code 787)
       final sqlCheck = await db.rawQuery(
@@ -3598,6 +3600,8 @@ class DatabaseHelper {
         rejection_reason TEXT,
         rejected_by TEXT,
         rejected_at TEXT,
+        record_serial INTEGER,
+        record_code TEXT,
         FOREIGN KEY (report_id) REFERENCES dr_reports(id) ON DELETE CASCADE
       )
     ''');

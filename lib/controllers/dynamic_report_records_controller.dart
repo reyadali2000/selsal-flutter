@@ -101,6 +101,8 @@ class DynamicReportRecordsController extends GetxController {
     if (q.isEmpty) return source.toList();
     return source.where((r) {
       final idStr = r.id.toString();
+      final serialStr = r.recordSerial?.toString() ?? '';
+      final codeStr = (r.recordCode ?? '').toLowerCase();
       final date1 = r.createdAt != null ? DateFormat('yyyy-MM-dd').format(r.createdAt!) : '';
       final date2 = r.createdAt != null ? DateFormat('yyyy/MM/dd').format(r.createdAt!) : '';
       final status = (r.status ?? '').toLowerCase();
@@ -110,6 +112,8 @@ class DynamicReportRecordsController extends GetxController {
       final branch = (r.branchName ?? '').toLowerCase();
       final dataJsonStr = (r.dataJson ?? '').toLowerCase();
       return idStr.contains(q) ||
+          serialStr.contains(q) ||
+          codeStr.contains(q) ||
           date1.contains(q) ||
           date2.contains(q) ||
           status.contains(q) ||
