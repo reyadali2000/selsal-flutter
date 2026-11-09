@@ -589,15 +589,23 @@ class DynamicReportPdfGenerator {
         totalSectionsHeight += h;
       }
 
-      final double maxContentHeightP1 = isLandscape ? 385 : 595;
-      final double maxContentHeightP2 = isLandscape ? 435 : 630;
-      final double sigHeight = isLandscape ? 65 : 85;
+      final budget = _calculateDynamicPageBudget(
+        pageFormat: pageFormat,
+        verticalMargin: verticalMargin,
+        isLandscape: isLandscape,
+        hasApprovals: report.approvalType != 'none',
+        headerConfig: report.headerConfig,
+      );
+
+      final double maxContentHeightP1 = budget.p1Max;
+      final double maxContentHeightP2 = budget.p2PlusMax;
+      final double sigHeight = budget.sigHeight;
 
       final List<List<DynamicReportSection>> pagedSections = [];
 
       if (allSections.isEmpty) {
         pagedSections.add([]);
-      } else if (totalSectionsHeight + sigHeight <= maxContentHeightP1) {
+      } else if (totalSectionsHeight + sigHeight <= budget.singlePageMax) {
         // التقرير يتسع بالكامل في صفحة واحدة
         pagedSections.add(allSections);
       } else {
@@ -1002,6 +1010,59 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
     }
 
     return result;
+  }
+
+  /// حساب ميزانية الارتفاع الصافي المتاح للأقسام في كل صفحة ديناميكياً
+  /// بناءً على الأبعاد الفيزيائية للصفحة وهوامشها وخصم العناصر الثابتة المحددة برمجياً
+  static ({
+    double p1Max,
+    double p2PlusMax,
+    double sigHeight,
+    double singlePageMax,
+  }) _calculateDynamicPageBudget({
+    required PdfPageFormat pageFormat,
+    required double verticalMargin,
+    required bool isLandscape,
+    required bool hasApprovals,
+    DynamicReportHeaderConfig? headerConfig,
+  }) {
+    final double totalHeight = pageFormat.height;
+    final double printableHeight = totalHeight - (verticalMargin * 2);
+
+    // 1. الترويسة والشعار ورقم الصفحة + فاصل بعدها
+    final double headerHeight = isLandscape ? 52.0 : 77.0;
+
+    // 2. صندوق عنوان التقرير + فاصل بعده
+    final double titleBoxHeight = isLandscape ? 26.0 : 33.0;
+
+    // 3. شريط بيانات السجل وتاريخ التعبئة (يظهر في الصفحة الأولى حصراً)
+    final double recordInfoHeight = isLandscape ? 24.0 : 33.0;
+
+    // 4. تذييل الصفحة (الباركود الرقمي ورقم الوثيقة وتاريخ الإصدار)
+    final double footerHeight = isLandscape ? 26.0 : 31.0;
+
+    // 5. جدول الاعتمادات والتواقيع (في الصفحة الأخيرة فقط إن وُجد)
+    final double sigHeight = hasApprovals ? (isLandscape ? 65.0 : 85.0) : 0.0;
+
+    // 6. هامش أمان وقائي (Safety Buffer) لمنع أي انقطاع ناجم عن تقريب الخطوط أو الفواصل الداخلية
+    final double safetyBufferP1 = isLandscape ? 25.0 : 35.0;
+    final double safetyBufferP2 = isLandscape ? 20.0 : 25.0;
+
+    // حساب صافي المساحة للأقسام:
+    final double rawP1Available = printableHeight - headerHeight - titleBoxHeight - recordInfoHeight - footerHeight - safetyBufferP1;
+    final double p1Max = rawP1Available * (isLandscape ? 0.90 : 0.82);
+
+    final double rawP2Available = printableHeight - headerHeight - titleBoxHeight - footerHeight - safetyBufferP2;
+    final double p2PlusMax = rawP2Available * (isLandscape ? 0.92 : 0.88);
+
+    final double singlePageMax = (rawP1Available - sigHeight) * (isLandscape ? 0.90 : 0.82);
+
+    return (
+      p1Max: p1Max,
+      p2PlusMax: p2PlusMax,
+      sigHeight: sigHeight,
+      singlePageMax: singlePageMax,
+    );
   }
 
   static double _estimateSectionHeight(
