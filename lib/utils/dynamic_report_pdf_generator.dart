@@ -589,9 +589,9 @@ class DynamicReportPdfGenerator {
         totalSectionsHeight += h;
       }
 
-      final double maxContentHeightP1 = isLandscape ? 380 : 540;
-      final double maxContentHeightP2 = isLandscape ? 430 : 620;
-      final double sigHeight = isLandscape ? 65 : 90;
+      final double maxContentHeightP1 = isLandscape ? 385 : 595;
+      final double maxContentHeightP2 = isLandscape ? 435 : 630;
+      final double sigHeight = isLandscape ? 65 : 85;
 
       final List<List<DynamicReportSection>> pagedSections = [];
 
@@ -1009,9 +1009,9 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
     Map<int, String> valueMap,
     bool isLandscape,
   ) {
-    double h = isLandscape ? 22.0 : 28.0;
+    double h = isLandscape ? 18.0 : 22.0;
     if (sec.description != null && sec.description!.trim().isNotEmpty) {
-      h += isLandscape ? 12.0 : 16.0;
+      h += isLandscape ? 10.0 : 14.0;
     }
     final fields = sec.fields ?? [];
     if (fields.isEmpty) {
@@ -1025,8 +1025,8 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
     final boxFields = fields.where((f) => boxFieldTypes.contains(f.fieldType)).toList();
     final tableFields = fields.where((f) => f.fieldType == 'table').toList();
 
-    h += standardFields.length * (isLandscape ? 18.0 : 22.0);
-    h += boxFields.length * (isLandscape ? 45.0 : 55.0);
+    h += standardFields.length * (isLandscape ? 16.0 : 20.0);
+    h += boxFields.length * (isLandscape ? 40.0 : 50.0);
 
     for (var tf in tableFields) {
       int rows = 3;
@@ -1037,7 +1037,7 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
           if (data is List && data.isNotEmpty) rows = data.length;
         } catch (_) {}
       }
-      h += (isLandscape ? 22.0 : 25.0) + (rows * (isLandscape ? 16.0 : 18.0));
+      h += (isLandscape ? 18.0 : 20.0) + (rows * (isLandscape ? 13.0 : 13.5));
     }
 
     return h;
