@@ -1150,6 +1150,7 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
 
       sectionWidgets.add(
         pw.Table(
+          defaultVerticalAlignment: pw.TableCellVerticalAlignment.full,
           border: pw.TableBorder.all(color: _tableBorder, width: 0.5),
           columnWidths: {
             0: const pw.FlexColumnWidth(3), // Left = Value
