@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -609,7 +610,7 @@ class DynamicReportPdfGenerator {
         // التقرير يتسع بالكامل في صفحة واحدة
         pagedSections.add(allSections);
       } else {
-        // التقرير يتطلب صفحتين أو أكثر: تقسيم ذكي ومتقن للأقسام
+        // التقرير يتطلب صفحتين أو أكثر: تقسيم ذكي ومتقن للأقسام يمنع العناوين المعلقة (Orphan Prevention)
         List<DynamicReportSection> currentPage = [];
         double currentHeight = 0;
         double currentMax = maxContentHeightP1;
@@ -617,8 +618,18 @@ class DynamicReportPdfGenerator {
         for (int i = 0; i < allSections.length; i++) {
           final sec = allSections[i];
           final secH = sectionHeights[i];
+          final bool isLastSection = (i == allSections.length - 1);
 
-          if (currentPage.isNotEmpty && (currentHeight + secH > currentMax)) {
+          // الحد الأدنى لحجز القسم مع عنوانه وجدوله لمنع العناوين المعلقة (Orphan Prevention)
+          final hasTable = sec.fields?.any((f) => f.fieldType == 'table') ?? false;
+          final double minRequiredHeight = hasTable ? (isLandscape ? 55.0 : 70.0) : (isLandscape ? 28.0 : 38.0);
+
+          // إذا كان هذا القسم هو الأخير، يجب أن تتسع الصفحة له بالإضافة لجدول الاعتمادات والتواقيع
+          final double extraRequiredForLast = isLastSection ? sigHeight : 0.0;
+          final bool fitsOnCurrent = (currentHeight + secH + extraRequiredForLast <= currentMax);
+          final bool spaceIsTooSmallToStart = (currentMax - currentHeight < minRequiredHeight);
+
+          if (currentPage.isNotEmpty && (!fitsOnCurrent || spaceIsTooSmallToStart)) {
             pagedSections.add(currentPage);
             currentPage = [sec];
             currentHeight = secH;
@@ -1086,19 +1097,83 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
     final boxFields = fields.where((f) => boxFieldTypes.contains(f.fieldType)).toList();
     final tableFields = fields.where((f) => f.fieldType == 'table').toList();
 
-    h += standardFields.length * (isLandscape ? 16.0 : 20.0);
-    h += boxFields.length * (isLandscape ? 40.0 : 50.0);
+    // 1. حساب الحقول القياسية مع احتساب التفاف النصوص
+    for (var f in standardFields) {
+      final val = valueMap[f.id] ?? '';
+      final lbl = f.label;
+      int lines = 1;
+      if (val.contains('\n') || lbl.contains('\n')) {
+        final valLines = val.split('\n').length;
+        final lblLines = lbl.split('\n').length;
+        lines = math.max(valLines, lblLines);
+      } else if (val.length > 70 || lbl.length > 50) {
+        lines = 3;
+      } else if (val.length > 35 || lbl.length > 25) {
+        lines = 2;
+      }
+      final double baseFieldH = isLandscape ? 16.0 : 20.0;
+      final double extraLineH = isLandscape ? 10.0 : 12.0;
+      h += baseFieldH + ((lines - 1) * extraLineH);
+    }
 
+    // 2. حساب الصناديق النصية (الملاحظات والتعليمات) بعدد أسطرها الواقعية
+    for (var bf in boxFields) {
+      final text = valueMap[bf.id] ?? '';
+      int textLines = 1;
+      if (text.isNotEmpty) {
+        final manualLines = text.split('\n').length;
+        final wrappedLines = (text.length / (isLandscape ? 80 : 55)).ceil();
+        textLines = math.max(manualLines, wrappedLines);
+      }
+      final double baseBoxH = isLandscape ? 22.0 : 26.0;
+      final double lineH = isLandscape ? 11.0 : 13.0;
+      h += baseBoxH + (textLines * lineH);
+    }
+
+    // 3. حساب جداول البيانات مع قياس التفاف الخلايا في كل صف
     for (var tf in tableFields) {
-      int rows = 3;
+      List<dynamic> rows = [];
       final raw = valueMap[tf.id] ?? '';
       if (raw.isNotEmpty) {
         try {
           final data = jsonDecode(raw);
-          if (data is List && data.isNotEmpty) rows = data.length;
+          if (data is List) rows = data;
         } catch (_) {}
       }
-      h += (isLandscape ? 18.0 : 20.0) + (rows * (isLandscape ? 13.0 : 13.5));
+      if (rows.isEmpty && tf.tableConfig != null) {
+        if (tf.tableConfig!.defaultRows.isNotEmpty) {
+          rows = tf.tableConfig!.defaultRows;
+        } else if (tf.tableConfig!.rowCount > 0) {
+          rows = List.generate(tf.tableConfig!.rowCount, (_) => const {});
+        }
+      }
+      if (rows.isEmpty) rows = [const {}, const {}, const {}];
+
+      // رأس الجدول
+      h += (isLandscape ? 18.0 : 22.0);
+
+      // صفوف الجدول مع التفاف النصوص داخل الخلايا
+      for (var r in rows) {
+        int maxLinesInRow = 1;
+        if (r is Map) {
+          for (var v in r.values) {
+            if (v != null) {
+              final s = v.toString();
+              if (s.contains('\n')) {
+                final l = s.split('\n').length;
+                if (l > maxLinesInRow) maxLinesInRow = l;
+              } else if (s.length > 70) {
+                if (3 > maxLinesInRow) maxLinesInRow = 3;
+              } else if (s.length > 35) {
+                if (2 > maxLinesInRow) maxLinesInRow = 2;
+              }
+            }
+          }
+        }
+        final double baseRowH = isLandscape ? 12.5 : 14.0;
+        final double extraH = isLandscape ? 9.5 : 11.5;
+        h += baseRowH + ((maxLinesInRow - 1) * extraH);
+      }
     }
 
     return h;
