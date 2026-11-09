@@ -445,16 +445,12 @@ class DynamicReportPdfGenerator {
     final double contentWidth = pageFormat.width - (horizontalMargin * 2);
 
     final expandedSections = _expandLongTableSections(report.sections ?? [], valueMap, isLandscape);
-    final tableSections = expandedSections.where((sec) =>
-        sec.fields?.any((f) => f.fieldType == 'table') ?? false).toList();
-    final bool useDedicatedTablePages = isLandscape && tableSections.isNotEmpty;
+    // استخراج بيانات التشغيل العامة للتقارير العرضية مع بدائل تلقائية تمنع ظهور 'غير متوفر' نهائياً
+    String reportDate = '';
+    String dayName = '';
+    String lineNumber = '';
 
-    if (useDedicatedTablePages) {
-      // استخراج بيانات التشغيل العامة مع بدائل تلقائية تمنع ظهور 'غير متوفر' نهائياً
-      String reportDate = '';
-      String dayName = '';
-      String lineNumber = '';
-
+    if (isLandscape) {
       for (var sec in report.sections ?? []) {
         for (var fld in sec.fields ?? []) {
           final k = fld.fieldKey.toLowerCase();
@@ -482,225 +478,138 @@ class DynamicReportPdfGenerator {
       if (lineNumber.isEmpty) {
         lineNumber = 'خط الإنتاج 1';
       }
+    }
 
-      final int totalPages = tableSections.length;
+    final allSections = expandedSections;
+    final List<double> sectionHeights = [];
+    double totalSectionsHeight = 0;
+    for (var sec in allSections) {
+      final h = _estimateSectionHeight(sec, valueMap, isLandscape);
+      sectionHeights.add(h);
+      totalSectionsHeight += h;
+    }
 
-      for (int pageIdx = 0; pageIdx < tableSections.length; pageIdx++) {
-        final sec = tableSections[pageIdx];
-        final currentTableFields = (sec.fields ?? []).where((f) => f.fieldType == 'table').toList();
-        final bool isLastPage = (pageIdx == tableSections.length - 1);
-        final pageNumStr = 'الصفحة ${pageIdx + 1} من $totalPages';
+    final budget = _calculateDynamicPageBudget(
+      pageFormat: pageFormat,
+      verticalMargin: verticalMargin,
+      isLandscape: isLandscape,
+      hasApprovals: report.approvalType != 'none',
+      headerConfig: report.headerConfig,
+    );
 
-        pdf.addPage(
-          pw.Page(
-            pageFormat: pageFormat,
-            textDirection: pw.TextDirection.rtl,
-            margin: pw.EdgeInsets.symmetric(horizontal: horizontalMargin, vertical: verticalMargin),
-            theme: pw.ThemeData.withFont(base: ttf, bold: ttfBold),
-            build: (context) {
-              return pw.Directionality(
-                textDirection: pw.TextDirection.rtl,
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                  children: [
-                    _buildHeader(logoImage, ttf, ttfBold, pageNumStr, contentWidth),
-                    pw.SizedBox(height: 3),
-                    _buildTitleBox(report.name, ttfBold, true),
-                    pw.SizedBox(height: 3),
-                    _buildCompactOperatingBar(
-                      record: record,
-                      reportDate: reportDate,
-                      dayName: dayName,
-                      lineNumber: lineNumber,
-                      ttf: ttf,
-                      ttfBold: ttfBold,
-                      headerConfig: report.headerConfig,
-                    ),
-                    pw.SizedBox(height: 3),
-                    _buildSectionBanner(sec, ttf, ttfBold),
-                    pw.SizedBox(height: 3),
-                    for (int tIdx = 0; tIdx < currentTableFields.length; tIdx++) ...[
-                      if (currentTableFields.length > 1) ...[
-                        pw.Container(
-                          padding: const pw.EdgeInsets.symmetric(vertical: 2, horizontal: 6),
-                          decoration: pw.BoxDecoration(
-                            color: const PdfColor.fromInt(0xFFEBF1F8),
-                            border: pw.Border.all(color: _tableBorder, width: 0.6),
-                            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
-                          ),
-                          alignment: pw.Alignment.centerRight,
-                          child: pw.Text(
-                            currentTableFields[tIdx].label,
-                            style: pw.TextStyle(font: ttfBold, fontSize: 8.5, color: const PdfColor.fromInt(0xFF1565C0)),
-                            textAlign: pw.TextAlign.right,
-                          ),
-                        ),
-                        pw.SizedBox(height: 2),
-                      ],
-                      _buildPdfTableField(
-                        currentTableFields[tIdx],
-                        valueMap[currentTableFields[tIdx].id!] ?? '',
-                        ttf,
-                        ttfBold,
-                        true,
-                        isDedicatedPage: true,
-                        isLastPage: isLastPage,
-                        isCompact: currentTableFields.length > 1,
-                      ),
-                      if (tIdx < currentTableFields.length - 1) pw.SizedBox(height: 3),
-                    ],
-                    for (var boxField in (sec.fields ?? []).where((f) => f.fieldType == 'note' || f.fieldType == 'instructions'))
-                      _buildPdfBoxField(boxField, valueMap[boxField.id!], ttf, ttfBold, isCompact: currentTableFields.length > 1),
-                    pw.Spacer(),
-                    // جدول الاعتماد الإداري يظهر حصرياً في الصفحة الأخيرة فقط من التقرير
-                    if (isLastPage && report.approvalType != 'none') ...[
-                      _buildSignaturesTable(
-                        record,
-                        ttf,
-                        ttfBold,
-                        report: report,
-                        isSingleLevel: report.approvalType == 'single_level',
-                        isLandscape: true,
-                        qsSignatureBytes: effectiveQsSignature,
-                        qmSignatureBytes: effectiveQmSignature,
-                        gmSignatureBytes: effectiveGmSignature,
-                        creatorSignatureBytes: effectiveCreatorSignature,
-                        rejectedSignatureBytes: rejectedSignatureBytes,
-                        qsSignatureHash: qsSigHash,
-                        qmSignatureHash: qmSigHash,
-                        gmSignatureHash: gmSigHash,
-                      ),
-                      pw.SizedBox(height: 3),
-                    ],
-                    _buildFooter(report, ttf, record),
-                  ],
-                ),
-              );
-            },
-          ),
-        );
-      }
+    final double maxContentHeightP1 = budget.p1Max;
+    final double maxContentHeightP2 = budget.p2PlusMax;
+    final double sigHeight = budget.sigHeight;
+
+    final List<List<DynamicReportSection>> pagedSections = [];
+
+    if (allSections.isEmpty) {
+      pagedSections.add([]);
+    } else if (totalSectionsHeight + sigHeight <= budget.singlePageMax) {
+      // التقرير يتسع بالكامل في صفحة واحدة
+      pagedSections.add(allSections);
     } else {
-      final allSections = expandedSections;
-      final List<double> sectionHeights = [];
-      double totalSectionsHeight = 0;
-      for (var sec in allSections) {
-        final h = _estimateSectionHeight(sec, valueMap, isLandscape);
-        sectionHeights.add(h);
-        totalSectionsHeight += h;
-      }
+      // التقرير يتطلب صفحتين أو أكثر: تقسيم ذكي ومتقن للأقسام يمنع العناوين المعلقة (Orphan Prevention)
+      List<DynamicReportSection> currentPage = [];
+      double currentHeight = 0;
+      double currentMax = maxContentHeightP1;
 
-      final budget = _calculateDynamicPageBudget(
-        pageFormat: pageFormat,
-        verticalMargin: verticalMargin,
-        isLandscape: isLandscape,
-        hasApprovals: report.approvalType != 'none',
-        headerConfig: report.headerConfig,
-      );
+      for (int i = 0; i < allSections.length; i++) {
+        final sec = allSections[i];
+        final secH = sectionHeights[i];
+        final bool isLastSection = (i == allSections.length - 1);
 
-      final double maxContentHeightP1 = budget.p1Max;
-      final double maxContentHeightP2 = budget.p2PlusMax;
-      final double sigHeight = budget.sigHeight;
+        // الحد الأدنى لحجز القسم مع عنوانه وجدوله لمنع العناوين المعلقة (Orphan Prevention)
+        final hasTable = sec.fields?.any((f) => f.fieldType == 'table') ?? false;
+        final double minRequiredHeight = hasTable ? (isLandscape ? 50.0 : 70.0) : (isLandscape ? 28.0 : 38.0);
 
-      final List<List<DynamicReportSection>> pagedSections = [];
+        // إذا كان هذا القسم هو الأخير، يجب أن تتسع الصفحة له بالإضافة لجدول الاعتمادات والتواقيع
+        final double extraRequiredForLast = isLastSection ? sigHeight : 0.0;
+        final bool fitsOnCurrent = (currentHeight + secH + extraRequiredForLast <= currentMax);
+        final bool spaceIsTooSmallToStart = (currentMax - currentHeight < minRequiredHeight);
 
-      if (allSections.isEmpty) {
-        pagedSections.add([]);
-      } else if (totalSectionsHeight + sigHeight <= budget.singlePageMax) {
-        // التقرير يتسع بالكامل في صفحة واحدة
-        pagedSections.add(allSections);
-      } else {
-        // التقرير يتطلب صفحتين أو أكثر: تقسيم ذكي ومتقن للأقسام يمنع العناوين المعلقة (Orphan Prevention)
-        List<DynamicReportSection> currentPage = [];
-        double currentHeight = 0;
-        double currentMax = maxContentHeightP1;
-
-        for (int i = 0; i < allSections.length; i++) {
-          final sec = allSections[i];
-          final secH = sectionHeights[i];
-          final bool isLastSection = (i == allSections.length - 1);
-
-          // الحد الأدنى لحجز القسم مع عنوانه وجدوله لمنع العناوين المعلقة (Orphan Prevention)
-          final hasTable = sec.fields?.any((f) => f.fieldType == 'table') ?? false;
-          final double minRequiredHeight = hasTable ? (isLandscape ? 55.0 : 70.0) : (isLandscape ? 28.0 : 38.0);
-
-          // إذا كان هذا القسم هو الأخير، يجب أن تتسع الصفحة له بالإضافة لجدول الاعتمادات والتواقيع
-          final double extraRequiredForLast = isLastSection ? sigHeight : 0.0;
-          final bool fitsOnCurrent = (currentHeight + secH + extraRequiredForLast <= currentMax);
-          final bool spaceIsTooSmallToStart = (currentMax - currentHeight < minRequiredHeight);
-
-          if (currentPage.isNotEmpty && (!fitsOnCurrent || spaceIsTooSmallToStart)) {
-            pagedSections.add(currentPage);
-            currentPage = [sec];
-            currentHeight = secH;
-            currentMax = maxContentHeightP2;
-          } else {
-            currentPage.add(sec);
-            currentHeight += secH;
-          }
-        }
-        if (currentPage.isNotEmpty) {
+        if (currentPage.isNotEmpty && (!fitsOnCurrent || spaceIsTooSmallToStart)) {
           pagedSections.add(currentPage);
+          currentPage = [sec];
+          currentHeight = secH;
+          currentMax = maxContentHeightP2;
+        } else {
+          currentPage.add(sec);
+          currentHeight += secH;
         }
       }
-
-      final int totalPages = pagedSections.length;
-      for (int pageIdx = 0; pageIdx < totalPages; pageIdx++) {
-        final bool isFirstPage = (pageIdx == 0);
-        final bool isLastPage = (pageIdx == totalPages - 1);
-        final pageNumStr = 'الصفحة ${pageIdx + 1} من $totalPages';
-        final pageSecs = pagedSections[pageIdx];
-
-        pdf.addPage(
-          pw.Page(
-            pageFormat: pageFormat,
-            textDirection: pw.TextDirection.rtl,
-            margin: pw.EdgeInsets.symmetric(horizontal: horizontalMargin, vertical: verticalMargin),
-            theme: pw.ThemeData.withFont(base: ttf, bold: ttfBold),
-            build: (context) {
-              return pw.Directionality(
-                textDirection: pw.TextDirection.rtl,
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                  children: [
-                    _buildHeader(logoImage, ttf, ttfBold, pageNumStr, contentWidth),
-                    pw.SizedBox(height: isLandscape ? 3 : 5),
-                    _buildTitleBox(report.name, ttfBold, isLandscape),
-                    pw.SizedBox(height: isLandscape ? 3 : 5),
-                    if (isFirstPage) ...[
-                      _buildRecordInfoSection(record, dateStr, ttf, ttfBold, isLandscape, report.headerConfig),
-                      pw.SizedBox(height: isLandscape ? 4 : 6),
-                    ],
-                    ..._buildSectionsList(pageSecs, valueMap, ttf, ttfBold, isLandscape),
-                    pw.Spacer(),
-                    // جدول الاعتماد الإداري: يثبت ميكانيكياً في أسفل الصفحة الأخيرة حصراً
-                    if (isLastPage && report.approvalType != 'none') ...[
-                      _buildSignaturesTable(
-                        record,
-                        ttf,
-                        ttfBold,
-                        report: report,
-                        isSingleLevel: report.approvalType == 'single_level',
-                        isLandscape: isLandscape,
-                        qsSignatureBytes: effectiveQsSignature,
-                        qmSignatureBytes: effectiveQmSignature,
-                        gmSignatureBytes: effectiveGmSignature,
-                        creatorSignatureBytes: effectiveCreatorSignature,
-                        rejectedSignatureBytes: rejectedSignatureBytes,
-                        qsSignatureHash: qsSigHash,
-                        qmSignatureHash: qmSigHash,
-                        gmSignatureHash: gmSigHash,
-                      ),
-                      pw.SizedBox(height: isLandscape ? 3 : 6),
-                    ],
-                    _buildFooter(report, ttf, record),
-                  ],
-                ),
-              );
-            },
-          ),
-        );
+      if (currentPage.isNotEmpty) {
+        pagedSections.add(currentPage);
       }
+    }
+
+    final int totalPages = pagedSections.length;
+    for (int pageIdx = 0; pageIdx < totalPages; pageIdx++) {
+      final bool isFirstPage = (pageIdx == 0);
+      final bool isLastPage = (pageIdx == totalPages - 1);
+      final pageNumStr = 'الصفحة ${pageIdx + 1} من $totalPages';
+      final pageSecs = pagedSections[pageIdx];
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: pageFormat,
+          textDirection: pw.TextDirection.rtl,
+          margin: pw.EdgeInsets.symmetric(horizontal: horizontalMargin, vertical: verticalMargin),
+          theme: pw.ThemeData.withFont(base: ttf, bold: ttfBold),
+          build: (context) {
+            return pw.Directionality(
+              textDirection: pw.TextDirection.rtl,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: [
+                  _buildHeader(logoImage, ttf, ttfBold, pageNumStr, contentWidth),
+                  pw.SizedBox(height: isLandscape ? 3 : 5),
+                  _buildTitleBox(report.name, ttfBold, isLandscape),
+                  pw.SizedBox(height: isLandscape ? 3 : 5),
+                  if (isFirstPage) ...[
+                    if (isLandscape)
+                      _buildCompactOperatingBar(
+                        record: record,
+                        reportDate: reportDate,
+                        dayName: dayName,
+                        lineNumber: lineNumber,
+                        ttf: ttf,
+                        ttfBold: ttfBold,
+                        headerConfig: report.headerConfig,
+                      )
+                    else
+                      _buildRecordInfoSection(record, dateStr, ttf, ttfBold, isLandscape, report.headerConfig),
+                    pw.SizedBox(height: isLandscape ? 4 : 6),
+                  ],
+                  ..._buildSectionsList(pageSecs, valueMap, ttf, ttfBold, isLandscape),
+                  pw.Spacer(),
+                  // جدول الاعتماد الإداري: يثبت ميكانيكياً في أسفل الصفحة الأخيرة حصراً
+                  if (isLastPage && report.approvalType != 'none') ...[
+                    _buildSignaturesTable(
+                      record,
+                      ttf,
+                      ttfBold,
+                      report: report,
+                      isSingleLevel: report.approvalType == 'single_level',
+                      isLandscape: isLandscape,
+                      qsSignatureBytes: effectiveQsSignature,
+                      qmSignatureBytes: effectiveQmSignature,
+                      gmSignatureBytes: effectiveGmSignature,
+                      creatorSignatureBytes: effectiveCreatorSignature,
+                      rejectedSignatureBytes: rejectedSignatureBytes,
+                      qsSignatureHash: qsSigHash,
+                      qmSignatureHash: qmSigHash,
+                      gmSignatureHash: gmSigHash,
+                    ),
+                    pw.SizedBox(height: isLandscape ? 3 : 6),
+                  ],
+                  _buildFooter(report, ttf, record),
+                ],
+              ),
+            );
+          },
+        ),
+      );
     }
   }
 
@@ -947,7 +856,7 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
     Map<int, String> valueMap,
     bool isLandscape,
   ) {
-    final int maxRowsPerPage = isLandscape ? 16 : 22;
+    final int maxRowsPerPage = isLandscape ? 24 : 22;
     final List<DynamicReportSection> result = [];
     int syntheticIdCounter = -900000;
 
@@ -1056,17 +965,17 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
     final double sigHeight = hasApprovals ? (isLandscape ? 65.0 : 85.0) : 0.0;
 
     // 6. هامش أمان وقائي (Safety Buffer) لمنع أي انقطاع ناجم عن تقريب الخطوط أو الفواصل الداخلية
-    final double safetyBufferP1 = isLandscape ? 25.0 : 35.0;
-    final double safetyBufferP2 = isLandscape ? 20.0 : 25.0;
+    final double safetyBufferP1 = isLandscape ? 15.0 : 35.0;
+    final double safetyBufferP2 = isLandscape ? 15.0 : 25.0;
 
     // حساب صافي المساحة للأقسام:
     final double rawP1Available = printableHeight - headerHeight - titleBoxHeight - recordInfoHeight - footerHeight - safetyBufferP1;
-    final double p1Max = rawP1Available * (isLandscape ? 0.90 : 0.82);
+    final double p1Max = rawP1Available * (isLandscape ? 0.94 : 0.82);
 
     final double rawP2Available = printableHeight - headerHeight - titleBoxHeight - footerHeight - safetyBufferP2;
-    final double p2PlusMax = rawP2Available * (isLandscape ? 0.92 : 0.88);
+    final double p2PlusMax = rawP2Available * (isLandscape ? 0.95 : 0.88);
 
-    final double singlePageMax = (rawP1Available - sigHeight) * (isLandscape ? 0.90 : 0.82);
+    final double singlePageMax = (rawP1Available - sigHeight) * (isLandscape ? 0.94 : 0.82);
 
     return (
       p1Max: p1Max,
@@ -1083,7 +992,7 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
   ) {
     double h = isLandscape ? 18.0 : 22.0;
     if (sec.description != null && sec.description!.trim().isNotEmpty) {
-      h += isLandscape ? 10.0 : 14.0;
+      h += isLandscape ? 2.0 : 14.0;
     }
     final fields = sec.fields ?? [];
     if (fields.isEmpty) {
@@ -1188,23 +1097,27 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
   ) {
     List<pw.Widget> sectionWidgets = [];
 
-    sectionWidgets.add(
-      pw.Container(
-        margin: pw.EdgeInsets.only(top: isLandscape ? 5 : 8, bottom: isLandscape ? 3 : 5),
-        padding: pw.EdgeInsets.symmetric(horizontal: 5, vertical: isLandscape ? 2.5 : 4),
-        color: PdfColors.grey200,
-        alignment: pw.Alignment.centerRight,
-        child: pw.Text(section.title, style: pw.TextStyle(font: ttfBold, fontSize: isLandscape ? 9.5 : 11), textAlign: pw.TextAlign.right),
-      ),
-    );
-
-    if (section.description != null && section.description!.isNotEmpty) {
+    if (isLandscape) {
+      sectionWidgets.add(_buildSectionBanner(section, ttf, ttfBold));
+    } else {
       sectionWidgets.add(
-        pw.Padding(
-          padding: const pw.EdgeInsets.only(bottom: 6),
-          child: pw.Text(section.description!, textAlign: pw.TextAlign.right, textDirection: pw.TextDirection.rtl, style: pw.TextStyle(font: ttf, fontSize: 9.5, color: PdfColors.grey700)),
+        pw.Container(
+          margin: const pw.EdgeInsets.only(top: 8, bottom: 5),
+          padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+          color: PdfColors.grey200,
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(section.title, style: pw.TextStyle(font: ttfBold, fontSize: 11), textAlign: pw.TextAlign.right),
         ),
       );
+
+      if (section.description != null && section.description!.isNotEmpty) {
+        sectionWidgets.add(
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 6),
+            child: pw.Text(section.description!, textAlign: pw.TextAlign.right, textDirection: pw.TextDirection.rtl, style: pw.TextStyle(font: ttf, fontSize: 9.5, color: PdfColors.grey700)),
+          ),
+        );
+      }
     }
 
     if (section.fields == null || section.fields!.isEmpty) {
@@ -1298,17 +1211,26 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
     }
 
     // Add table fields
+    final bool hasSingleTableOnly = tableFields.length == 1 && standardFields.isEmpty;
     for (var tableField in tableFields) {
       final rawJson = valueMap[tableField.id!] ?? '';
       sectionWidgets.add(
-        _buildPdfTableField(tableField, rawJson, ttf, ttfBold, isLandscape),
+        _buildPdfTableField(
+          tableField,
+          rawJson,
+          ttf,
+          ttfBold,
+          isLandscape,
+          showTableLabel: !hasSingleTableOnly,
+          isCompact: isLandscape && tableFields.length > 1,
+        ),
       );
     }
 
     // Add note & instructions boxes
     for (var boxField in boxFields) {
       sectionWidgets.add(
-        _buildPdfBoxField(boxField, valueMap[boxField.id!], ttf, ttfBold),
+        _buildPdfBoxField(boxField, valueMap[boxField.id!], ttf, ttfBold, isCompact: isLandscape),
       );
     }
 
@@ -1379,7 +1301,15 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
     );
   }
 
-  static pw.Widget _buildPdfTableField(DynamicReportField field, String rawJson, pw.Font ttf, pw.Font ttfBold, bool isLandscape, {bool isDedicatedPage = false, bool isLastPage = true, bool isCompact = false}) {
+  static pw.Widget _buildPdfTableField(
+    DynamicReportField field,
+    String rawJson,
+    pw.Font ttf,
+    pw.Font ttfBold,
+    bool isLandscape, {
+    bool isCompact = false,
+    bool showTableLabel = true,
+  }) {
     final config = field.tableConfig ?? DynamicTableConfig.inspectionChecklistTemplate();
     List<Map<String, dynamic>> rows = [];
     if (rawJson.isNotEmpty) {
@@ -1397,9 +1327,9 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
     }
 
     final isWide = isLandscape || config.columns.length > 5;
-    final double headerFontSize = isDedicatedPage ? (isCompact ? 5.8 : 6.5) : (isWide ? 6.5 : 8.5);
-    final double cellFontSize = isDedicatedPage ? (isCompact ? 5.8 : (isLastPage ? 6.5 : 7.2)) : (isWide ? 6.5 : 8.0);
-    final double rowPadY = isDedicatedPage ? (isCompact ? 1.2 : (isLastPage ? 1.8 : 3.0)) : 3.0;
+    final double headerFontSize = isCompact ? 5.8 : (isWide ? 6.5 : 8.5);
+    final double cellFontSize = isCompact ? 5.8 : (isWide ? (isLandscape ? 6.8 : 6.5) : 8.0);
+    final double rowPadY = isCompact ? 1.2 : (isLandscape ? 1.8 : 3.0);
 
     List<pw.Widget> headerWidgets = [];
     List<double> widthRatios = [];
@@ -1618,7 +1548,7 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
       );
     }
 
-    if (isDedicatedPage) {
+    if (!showTableLabel) {
       return pw.Table(
         border: pw.TableBorder.all(color: _tableBorder, width: 0.5),
         columnWidths: columnWidths,
@@ -1629,20 +1559,20 @@ static pw.Widget _buildHeader(pw.MemoryImage? logoImage, pw.Font ttf, pw.Font tt
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
-        pw.SizedBox(height: 6),
+        pw.SizedBox(height: isLandscape ? 3 : 6),
         pw.Container(
-          padding: const pw.EdgeInsets.symmetric(vertical: 3, horizontal: 6),
+          padding: pw.EdgeInsets.symmetric(vertical: isLandscape ? 2 : 3, horizontal: 6),
           color: PdfColors.grey100,
           alignment: pw.Alignment.centerRight,
-          child: pw.Text(field.label, style: pw.TextStyle(font: ttfBold, fontSize: 10), textAlign: pw.TextAlign.right),
+          child: pw.Text(field.label, style: pw.TextStyle(font: ttfBold, fontSize: isLandscape ? 8.5 : 10), textAlign: pw.TextAlign.right),
         ),
-        pw.SizedBox(height: 3),
+        pw.SizedBox(height: isLandscape ? 2 : 3),
         pw.Table(
           border: pw.TableBorder.all(color: _tableBorder, width: 0.6),
           columnWidths: columnWidths,
           children: tableRows,
         ),
-        pw.SizedBox(height: 6),
+        pw.SizedBox(height: isLandscape ? 3 : 6),
       ],
     );
   }
